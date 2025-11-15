@@ -10,19 +10,34 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EllipsisVertical, PlusCircle, CheckCircle2, Play, Square, Eye, Save, FolderOpen, MoreVertical } from "lucide-react"
-import { createConfig, getConfig } from "@/lib/config-service"
+import { createConfig, getConfig, testConnection as testConnectionApi } from "@/lib/config-service"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SelectFieldDialog } from "./components/selectfields-dialog"
 import { SaveXmlDialog } from "./components/saveXml-dialog"
-import { getRecords, transferData, type TransferError } from "@/lib/table-service"
+import { getRecords, transferData, stopTransfer, type TransferError } from "@/lib/table-service"
 import { UpdateAlertDialog } from "./components/updateConfirmation-adialog"
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@radix-ui/react-context-menu"
 import { toast } from "sonner"
 import { CreateConnectionDialog } from "./components/createConnection-dialog"
 
@@ -45,6 +60,7 @@ type TaskTableRow = {
   updateMode?: string
   conditions?: string
   tableDesc?: string
+  tablePrefix?: string
 }
 
 export default function TransferConfiguration() {
@@ -68,6 +84,12 @@ export default function TransferConfiguration() {
   // select fiel dialog state
   const [selectDialogOpen, setSelectDialogOpen] = useState(false)
   const [selectedRow, setSelectedRow] = useState<TaskTableRow | undefined>(undefined)
+  const [selectFieldsText, setSelectFieldsText] = useState("")
+  const [excludeFieldsText, setExcludeFieldsText] = useState("")
+  const [bulkUpdateMode, setBulkUpdateMode] = useState("")
+  const [bulkTablePrefix, setBulkTablePrefix] = useState("")
+  const [bulkUpdateDialogOpen, setBulkUpdateDialogOpen] = useState(false)
+  const [bulkPrefixDialogOpen, setBulkPrefixDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingCell, setEditingCell] = useState<{
     row: number;
@@ -111,7 +133,6 @@ export default function TransferConfiguration() {
     }
     if (currentValue && currentValue.trim().length > 0) {
       const parsed = parseConnection(currentValue)
-      console.log("parsed", parsed)
       setDbHost(parsed.host)
       setDbName(parsed.db)
       setDbUser(parsed.user)
@@ -130,8 +151,23 @@ export default function TransferConfiguration() {
   }
 
   async function testConnection(value: string) {
-    await new Promise(r => setTimeout(r, 600))
-    toast.info(value ? "Connection successful" : "Please enter a connection string to test")
+    if (!value || !value.trim()) {
+      toast.warning("Please enter a connection string to test")
+      return
+    }
+
+    try {
+      const result = await testConnectionApi(value.trim())
+
+      if (result.success) {
+        toast.success(result.message || "Connection successful")
+      } else {
+        toast.error(result.error || "Connection failed")
+      }
+    } catch (err: any) {
+      const errorMessage = err?.response?.data?.error || err?.message || "Failed to test connection"
+      toast.error(errorMessage)
+    }
   }
 
   function focusNextCell(row: number, field: keyof TaskTableRow) {
@@ -143,7 +179,8 @@ export default function TransferConfiguration() {
       "updateResults",
       "updateMode",
       "sqlAfter",
-      "conditions"
+      "conditions",
+      "tablePrefix"
     ];
 
     const rowCount = document.querySelectorAll('tbody tr').length;
@@ -162,6 +199,40 @@ export default function TransferConfiguration() {
     setEditingCell({ row: nextRow, field: fields[nextFieldIndex] });
   }
 
+  function applyBulkUpdateModeValue(value: string) {
+    setLoadedRows(prev => prev.map(r => ({ ...r, updateMode: value })))
+    setSelectedRow(prev => (prev ? { ...prev, updateMode: value } : prev))
+  }
+
+  function applyBulkTablePrefixValue(value: string) {
+    setLoadedRows(prev => prev.map(r => ({ ...r, tablePrefix: value })))
+    setSelectedRow(prev => (prev ? { ...prev, tablePrefix: value } : prev))
+  }
+
+  function handleBulkApplyUpdateMode() {
+    applyBulkUpdateModeValue(bulkUpdateMode)
+    toast.success("UpdateMode applied to all tables")
+    setBulkUpdateDialogOpen(false)
+  }
+
+  function handleBulkApplyTablePrefix() {
+    applyBulkTablePrefixValue(bulkTablePrefix)
+    toast.success("Table prefix applied to all tables")
+    setBulkPrefixDialogOpen(false)
+  }
+
+  function handleClearUpdateMode() {
+    setBulkUpdateMode("")
+    applyBulkUpdateModeValue("")
+    toast.success("Cleared UpdateMode for all tables")
+  }
+
+  function handleClearTablePrefix() {
+    setBulkTablePrefix("")
+    applyBulkTablePrefixValue("")
+    toast.success("Cleared table prefix for all tables")
+  }
+
   const handleUpdate = async () => {
     try {
       const username = "Administrator"
@@ -177,6 +248,7 @@ export default function TransferConfiguration() {
           sqlAfter: r.sqlAfter || "",
           conditions: r.conditions || "",
           tableDesc: r.tableDesc || "",
+          tablePrefix: r.tablePrefix || "",
         }))
 
       if (rowsToTransfer.length === 0) {
@@ -185,7 +257,7 @@ export default function TransferConfiguration() {
       }
 
       const result = await transferData(username, rowsToTransfer)
-      
+
       // Update error state
       if (result.errors && Object.keys(result.errors).length > 0) {
         setTransferErrors(result.errors)
@@ -204,7 +276,7 @@ export default function TransferConfiguration() {
       setLoadedRows(prev =>
         prev.map(r => {
           if (!r.includeInUpdate) return r
-          
+
           const tableError = result.errors?.[r.physicalName]
           if (tableError) {
             return { ...r, updateResults: `Failed: ${tableError.error}` }
@@ -219,7 +291,44 @@ export default function TransferConfiguration() {
     }
   }
 
-  const handleStop = () => toast.info('Stop transfer')
+  const handleStop = async () => {
+    try {
+      const username = "Administrator"
+      const result = await stopTransfer(username)
+
+      // Update error state if there are errors
+      if (result.errors && Object.keys(result.errors).length > 0) {
+        setTransferErrors(result.errors)
+      } else {
+        setTransferErrors({})
+      }
+
+      // Update rows with cancellation status
+      setLoadedRows(prev =>
+        prev.map(r => {
+          if (!r.includeInUpdate) return r
+
+          const tableError = result.errors?.[r.physicalName]
+          if (tableError) {
+            return { ...r, updateResults: `Cancelled: ${tableError.error}` }
+          } else if (result.cancelled) {
+            return { ...r, updateResults: "Transfer cancelled" }
+          }
+          return r
+        })
+      )
+
+      // Show toast with summary
+      if (result.failedTables > 0) {
+        toast.warning(`${result.message} - ${result.successTables} succeeded, ${result.failedTables} cancelled/failed`)
+      } else {
+        toast.success(result.message || 'Transfer stopped successfully')
+      }
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || 'Failed to stop transfer'
+      toast.error(message)
+    }
+  }
   const handleLoad = () => fileInputRef.current?.click()
   const handleSave = async () => {
     try {
@@ -230,14 +339,53 @@ export default function TransferConfiguration() {
         src_man_con_str: source.manufacturing,
         des_fin_con_str: dest.finance,
         des_man_con_str: dest.manufacturing,
-        plan_dsn: "",
-        plan_db_type: "",
       })
       toast.success('Configuration saved')
     } catch (err: any) {
       const message = err?.response?.data?.message || err?.message || 'Failed to save configuration'
       toast.error(message)
     }
+  }
+
+  const handleExportXml = (filename: string) => {
+    try {
+      const xmlContent = generateErpTablesXml(loadedRows)
+      const blob = new Blob([xmlContent], { type: 'application/xml' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast.success('XML file exported successfully')
+    } catch (err: any) {
+      toast.error('Failed to export XML file')
+    }
+  }
+
+  const updateSelectedRow = (updates: Partial<TaskTableRow>) => {
+    if (!selectedRow) return
+
+    // Find the row index using the current physicalName before any updates
+    const rowIndex = loadedRows.findIndex(r => r.physicalName === selectedRow.physicalName)
+    if (rowIndex === -1) return
+
+    // Create updated row with proper merging
+    const updatedRow = { ...selectedRow, ...updates }
+
+    // Update selectedRow first to ensure immediate UI update
+    setSelectedRow(updatedRow)
+
+    // Then update loadedRows to keep data in sync
+    setLoadedRows(prev => {
+      const next = [...prev]
+      if (next[rowIndex]) {
+        next[rowIndex] = updatedRow
+      }
+      return next
+    })
   }
 
   const handleViewSource = async () => {
@@ -289,14 +437,27 @@ export default function TransferConfiguration() {
   }
   const handleSelectFeilds = (fields: string[]) => {
     if (!selectedRow) return;
+    const updatedRow = { ...selectedRow, selectFields: fields }
+    setSelectedRow(updatedRow)
     setLoadedRows((prev) =>
       prev.map((r) =>
         r.physicalName === selectedRow.physicalName
-          ? { ...r, selectFields: fields }
+          ? updatedRow
           : r
       )
     )
   }
+
+  // Sync text fields when selectedRow changes
+  useEffect(() => {
+    if (selectedRow) {
+      setSelectFieldsText(selectedRow.selectFields?.join(", ") || "")
+      setExcludeFieldsText(selectedRow.excludeFields?.join(", ") || "")
+    } else {
+      setSelectFieldsText("")
+      setExcludeFieldsText("")
+    }
+  }, [selectedRow])
 
   // Load configuration on mount
   useEffect(() => {
@@ -326,10 +487,11 @@ export default function TransferConfiguration() {
       includeInUpdate: false,
       updateResults: "",
       conditions: "",
+      tablePrefix: "",
     }
     const newIndex = loadedRows.length
     setLoadedRows(prev => [...prev, newRow])
-    
+
     // Scroll to the new row after it's rendered
     setTimeout(() => {
       // Find the last row (the newly added one) and scroll to it
@@ -467,16 +629,41 @@ export default function TransferConfiguration() {
                     <TableHead className="w-[110px]">Type</TableHead>
                     <TableHead className="w-[90px]">DB</TableHead>
                     <TableHead>Results</TableHead>
-                    <TableHead>UpdateMode</TableHead>
+                    <ContextMenu>
+                      <ContextMenuTrigger asChild>
+                        <TableHead className="cursor-pointer">UpdateMode</TableHead>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem onClick={() => setBulkUpdateDialogOpen(true)}>
+                          Update all
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={handleClearUpdateMode}>
+                          Clear all
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                     <TableHead>Sql After</TableHead>
                     <TableHead>Conditions</TableHead>
+                    <ContextMenu>
+                      <ContextMenuTrigger asChild>
+                        <TableHead className="cursor-pointer">Table Prefix</TableHead>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem onClick={() => setBulkPrefixDialogOpen(true)}>
+                          Update all
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={handleClearTablePrefix}>
+                          Clear
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody ref={tableBodyRef}>
                   {loadedRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">No data loaded. Click Load to import an ERPTables XML.</TableCell>
+                      <TableCell colSpan={11} className="text-muted-foreground">No data loaded. Click Load to import an ERPTables XML.</TableCell>
                     </TableRow>
                   ) : (
                     loadedRows.map((r, idx) => (
@@ -687,6 +874,30 @@ export default function TransferConfiguration() {
                                 <span className="block cursor-text select-text">{r.conditions || '—'}</span>
                               )}
                             </TableCell>
+                            <TableCell className="font-medium" onDoubleClick={() => setEditingCell({ row: idx, field: 'tablePrefix' })}>
+                              {editingCell?.row === idx && editingCell.field === 'tablePrefix' ? (
+                                <Input
+                                  autoFocus
+                                  value={r.tablePrefix || ''}
+                                  onChange={(e) => {
+                                    const next = [...loadedRows]
+                                    next[idx] = { ...next[idx], tablePrefix: e.target.value }
+                                    setLoadedRows(next)
+                                  }}
+                                  onBlur={() => setEditingCell(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === 'Escape') setEditingCell(null)
+                                    if (e.key === "Tab") {
+                                      e.preventDefault();
+                                      focusNextCell(idx, "tablePrefix");
+                                    }
+                                  }}
+                                  placeholder="Table Prefix"
+                                />
+                              ) : (
+                                <span className="block cursor-text select-text">{r.tablePrefix || '—'}</span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -791,8 +1002,8 @@ export default function TransferConfiguration() {
                         <input
                           type="text"
                           value={selectedRow.moduleName || ""}
-                          className="border rounded px-2 py-1 text-sm bg-muted/30"
-                          readOnly
+                          onChange={(e) => updateSelectedRow({ moduleName: e.target.value })}
+                          className="border rounded px-2 py-1 text-sm bg-background"
                         />
                       </div>
 
@@ -801,8 +1012,8 @@ export default function TransferConfiguration() {
                         <input
                           type="text"
                           value={selectedRow.physicalName || ""}
-                          className="border rounded px-2 py-1 text-sm bg-muted/30"
-                          readOnly
+                          onChange={(e) => updateSelectedRow({ physicalName: e.target.value })}
+                          className="border rounded px-2 py-1 text-sm bg-background"
                         />
                       </div>
 
@@ -811,10 +1022,30 @@ export default function TransferConfiguration() {
                           Select Fields:
                         </label>
                         <textarea
-                          value={selectedRow.selectFields?.join(", ") || ""}
+                          value={selectFieldsText}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setSelectFieldsText(value)
+                            // Parse and update the actual fields
+                            const fields = value
+                              .split(",")
+                              .map(f => f.trim())
+                              .filter(Boolean)
+                            updateSelectedRow({ selectFields: fields.length > 0 ? fields : [] })
+                          }}
+                          onBlur={(e) => {
+                            // On blur, clean up and normalize
+                            const value = e.target.value.trim()
+                            const fields = value
+                              .split(",")
+                              .map(f => f.trim())
+                              .filter(Boolean)
+                            const normalizedText = fields.join(", ")
+                            setSelectFieldsText(normalizedText)
+                            updateSelectedRow({ selectFields: fields })
+                          }}
                           rows={4}
-                          className="w-full border rounded px-2 py-1 text-sm bg-muted/30 resize-none"
-                          readOnly
+                          className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
                         />
                       </div>
 
@@ -824,9 +1055,9 @@ export default function TransferConfiguration() {
                         </label>
                         <textarea
                           value={selectedRow.sqlBefore || ""}
+                          onChange={(e) => updateSelectedRow({ sqlBefore: e.target.value })}
                           rows={4}
-                          className="w-full border rounded px-2 py-1 text-sm bg-muted/30 resize-none"
-                          readOnly
+                          className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
                         />
                       </div>
 
@@ -839,8 +1070,8 @@ export default function TransferConfiguration() {
                         <input
                           type="text"
                           value={selectedRow.databaseName || ""}
-                          className="border rounded px-2 py-1 text-sm bg-muted/30"
-                          readOnly
+                          onChange={(e) => updateSelectedRow({ databaseName: e.target.value })}
+                          className="border rounded px-2 py-1 text-sm bg-background"
                         />
                       </div>
 
@@ -849,8 +1080,8 @@ export default function TransferConfiguration() {
                         <input
                           type="text"
                           value={selectedRow.tableType || ""}
-                          className="border rounded px-2 py-1 text-sm bg-muted/30"
-                          readOnly
+                          onChange={(e) => updateSelectedRow({ tableType: e.target.value })}
+                          className="border rounded px-2 py-1 text-sm bg-background"
                         />
                       </div>
 
@@ -859,10 +1090,30 @@ export default function TransferConfiguration() {
                           Excluded Fields:
                         </label>
                         <textarea
-                          value={selectedRow.excludeFields?.join(", ") || ""}
+                          value={excludeFieldsText}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setExcludeFieldsText(value)
+                            // Parse and update the actual fields
+                            const fields = value
+                              .split(",")
+                              .map(f => f.trim())
+                              .filter(Boolean)
+                            updateSelectedRow({ excludeFields: fields.length > 0 ? fields : [] })
+                          }}
+                          onBlur={(e) => {
+                            // On blur, clean up and normalize
+                            const value = e.target.value.trim()
+                            const fields = value
+                              .split(",")
+                              .map(f => f.trim())
+                              .filter(Boolean)
+                            const normalizedText = fields.join(", ")
+                            setExcludeFieldsText(normalizedText)
+                            updateSelectedRow({ excludeFields: fields })
+                          }}
                           rows={4}
-                          className="w-full border rounded px-2 py-1 text-sm bg-muted/30 resize-none"
-                          readOnly
+                          className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
                         />
                       </div>
 
@@ -872,9 +1123,31 @@ export default function TransferConfiguration() {
                         </label>
                         <textarea
                           value={selectedRow.sqlAfter || ""}
+                          onChange={(e) => updateSelectedRow({ sqlAfter: e.target.value })}
                           rows={4}
-                          className="w-full border rounded px-2 py-1 text-sm bg-muted/30 resize-none"
-                          readOnly
+                          className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 items-center gap-2">
+                        <label className="text-sm text-muted-foreground">Update Mode:</label>
+                        <input
+                          type="text"
+                          value={selectedRow.updateMode || ""}
+                          onChange={(e) => updateSelectedRow({ updateMode: e.target.value })}
+                          className="border rounded px-2 py-1 text-sm bg-background"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-muted-foreground mb-1">
+                          Conditions:
+                        </label>
+                        <textarea
+                          value={selectedRow.conditions || ""}
+                          onChange={(e) => updateSelectedRow({ conditions: e.target.value })}
+                          rows={3}
+                          className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
                         />
                       </div>
                     </div>
@@ -885,9 +1158,21 @@ export default function TransferConfiguration() {
                     </label>
                     <textarea
                       value={selectedRow.tableDesc || ""}
+                      onChange={(e) => updateSelectedRow({ tableDesc: e.target.value })}
                       rows={3}
-                      className="w-full border rounded px-2 py-1 text-sm bg-muted/30 resize-none"
-                      readOnly
+                      className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-1">
+                      Table Prefix:
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedRow.tablePrefix || ""}
+                      onChange={(e) => updateSelectedRow({ tablePrefix: e.target.value })}
+                      className="w-full border rounded px-2 py-1 text-sm bg-background"
                     />
                   </div>
 
@@ -897,9 +1182,9 @@ export default function TransferConfiguration() {
                     </label>
                     <textarea
                       value={selectedRow.updateResults || ""}
+                      onChange={(e) => updateSelectedRow({ updateResults: e.target.value })}
                       rows={3}
-                      className="w-full border rounded px-2 py-1 text-sm bg-muted/30 resize-none"
-                      readOnly
+                      className="w-full border rounded px-2 py-1 text-sm bg-background resize-none"
                     />
                   </div>
 
@@ -934,7 +1219,57 @@ export default function TransferConfiguration() {
       </Tabs>
       {/* Create Connection Dialog */}
       <SelectFieldDialog dbType={selectedRow?.databaseName ?? ""} tableName={selectedRow?.physicalName ?? ""} defaultFields={selectedRow?.selectFields ?? []} onSave={handleSelectFeilds} onOpenChange={setSelectDialogOpen} open={selectDialogOpen}></SelectFieldDialog>
-      <SaveXmlDialog open={saveDialogOpen} onSave={handleSave} onOpenChange={setSaveDialogOpen} />
+      <AlertDialog open={bulkUpdateDialogOpen} onOpenChange={setBulkUpdateDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update all UpdateMode values</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter the UpdateMode value that should be applied to every table.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="dialog-bulk-update-mode">UpdateMode</Label>
+              <Input
+                id="dialog-bulk-update-mode"
+                value={bulkUpdateMode}
+                onChange={(e) => setBulkUpdateMode(e.target.value)}
+                placeholder="Enter UpdateMode value"
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkApplyUpdateMode}>Apply to all</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={bulkPrefixDialogOpen} onOpenChange={setBulkPrefixDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update all Table Prefix values</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter the table prefix that should be applied to every table.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="dialog-bulk-prefix">Table Prefix</Label>
+              <Input
+                id="dialog-bulk-prefix"
+                value={bulkTablePrefix}
+                onChange={(e) => setBulkTablePrefix(e.target.value)}
+                placeholder="Enter table prefix value"
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkApplyTablePrefix}>Apply to all</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <SaveXmlDialog open={saveDialogOpen} onSave={handleExportXml} onOpenChange={setSaveDialogOpen} />
       <UpdateAlertDialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen} onContinue={handleUpdate} />
       <CreateConnectionDialog
         open={dialogOpen}
@@ -995,26 +1330,66 @@ function parseErpTablesXml(xmlText: string): TaskTableRow[] {
       selectFields,
       excludeFields,
       tableDesc: find('TableDesc') || undefined,
+      tablePrefix: find('TablePrefix') || undefined,
     })
   }
   return items
 }
 
+function generateErpTablesXml(rows: TaskTableRow[]): string {
+  const escapeXml = (str: string | undefined): string => {
+    if (!str) return ''
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+  }
+
+  const xmlRows = rows.map(row => {
+    const selectFieldsStr = row.selectFields?.join(', ') || ''
+    const excludeFieldsStr = row.excludeFields?.join(', ') || ''
+
+    return `    <taskTable>
+      <ModuleName>${escapeXml(row.moduleName)}</ModuleName>
+      <PhysicalName>${escapeXml(row.physicalName)}</PhysicalName>
+      <TableType>${escapeXml(row.tableType)}</TableType>
+      <DatabaseName>${escapeXml(row.databaseName)}</DatabaseName>
+      <IncludeInUpdate>${row.includeInUpdate ? 'true' : 'false'}</IncludeInUpdate>
+      <UpdateResults>${escapeXml(row.updateResults)}</UpdateResults>
+      <SelectFields>${escapeXml(selectFieldsStr)}</SelectFields>
+      <ExcludeFields>${escapeXml(excludeFieldsStr)}</ExcludeFields>
+      ${row.sqlBefore ? `<SqlBefore>${escapeXml(row.sqlBefore)}</SqlBefore>` : ''}
+      ${row.sqlAfter ? `<SqlAfter>${escapeXml(row.sqlAfter)}</SqlAfter>` : ''}
+      ${row.updateMode ? `<UpdateMode>${escapeXml(row.updateMode)}</UpdateMode>` : ''}
+      ${row.conditions ? `<Conditions>${escapeXml(row.conditions)}</Conditions>` : ''}
+      ${row.tableDesc ? `<TableDesc>${escapeXml(row.tableDesc)}</TableDesc>` : ''}
+      ${row.tablePrefix ? `<TablePrefix>${escapeXml(row.tablePrefix)}</TablePrefix>` : ''}
+    </taskTable>`
+  }).join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ERPTables>
+${xmlRows}
+</ERPTables>`
+}
+
 function maskPasswordInConnectionString(connStr: string): string {
   if (!connStr) return connStr
-  
+
   // Handle both semicolon and comma delimiters
   const delimiter = connStr.includes(";") ? ";" : ","
   const parts = connStr.split(delimiter)
-  
+
   return parts.map(part => {
     const trimmed = part.trim()
     const lowerTrimmed = trimmed.toLowerCase()
-    
+
     // Check for various password key formats
-    if (lowerTrimmed.startsWith("password=") || 
-        lowerTrimmed.startsWith("pwd=") ||
-        lowerTrimmed.startsWith("pass=")) {
+    if (lowerTrimmed.startsWith("password=") ||
+      lowerTrimmed.startsWith("pwd=") ||
+      lowerTrimmed.startsWith("pass=")) {
       const eqIdx = trimmed.indexOf("=")
       if (eqIdx !== -1) {
         const key = trimmed.substring(0, eqIdx + 1)
@@ -1036,7 +1411,7 @@ function FieldRow({ id, label, value, onChange, onCreate, onTest }: {
   onTest: () => void;
 }) {
   const [isFocused, setIsFocused] = useState(false)
-  
+
   return (
     <div className="grid grid-cols-12 items-center gap-2">
       <Label htmlFor={id} className="col-span-3 text-sm">{label}:</Label>

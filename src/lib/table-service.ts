@@ -25,6 +25,7 @@ export type TableDefinition = {
   sqlAfter: string
   conditions: string
   tableDesc: string
+  tablePrefix: string
 }
 
 export type TransferError = {
@@ -37,6 +38,7 @@ export type TransferResponse = {
   totalTables: number
   failedTables: number
   successTables: number
+  cancelled?: boolean
   errors?: Record<string, TransferError>
 }
 
@@ -56,4 +58,19 @@ export async function transferData(username: string, payload: TableDefinition[])
   const url = `/transfer/${encodeURIComponent(username)}`
   const { data } = await apiClient.post(url, payload)
   return data as TransferResponse
+}
+
+export type StopTransferResponse = {
+  message: string
+  totalTables: number
+  failedTables: number
+  successTables: number
+  cancelled: boolean
+  errors?: Record<string, TransferError>
+}
+
+export async function stopTransfer(username: string): Promise<StopTransferResponse> {
+  const url = `/transfer/${encodeURIComponent(username)}/stop`
+  const { data } = await apiClient.post(url)
+  return data as StopTransferResponse
 }

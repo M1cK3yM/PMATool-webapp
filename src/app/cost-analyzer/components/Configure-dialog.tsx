@@ -1,19 +1,20 @@
 "use client"
 
-import { Dispatch, SetStateAction, useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Combobox } from "@/components/ui/combobox"
-import { DbConfig } from "../page"
+import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
+import { Dialog, DialogHeader, DialogContent, DialogDescription, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { createConfig, testConnection as testConnectionApi } from "@/lib/config-service";
+import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { toast } from "sonner";
+
+interface ConfigureDialog {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  dbConnection: DbConnection
+  setPlanConn: Dispatch<SetStateAction<string>>
+}
 
 interface DbConnection {
   dbHost: string
@@ -24,26 +25,7 @@ interface DbConnection {
   dbType: string
 }
 
-interface CorrectConnectionDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  isEditing: boolean
-  dialogFor: any
-  dbConnection: DbConnection
-  setSource: Dispatch<SetStateAction<DbConfig>>
-  setDest: Dispatch<SetStateAction<DbConfig>>
-}
-
-
-export function CreateConnectionDialog({
-  open,
-  onOpenChange,
-  isEditing = true,
-  dialogFor,
-  setSource,
-  dbConnection,
-  setDest,
-}: CorrectConnectionDialogProps) {
+export default function ConfigureDialog({ open, onOpenChange, dbConnection, setPlanConn }: ConfigureDialog) {
   const [dbHost, setDbHost] = useState(dbConnection.dbHost)
   const [dbPort, setDbPort] = useState(dbConnection.dbPort)
   const [dbName, setDbName] = useState(dbConnection.dbName)
@@ -60,8 +42,12 @@ export function CreateConnectionDialog({
     setDbType(dbConnection.dbType)
   }, [dbConnection])
 
-  function saveConnectionFromDialog() {
-    // Build a Postgres DSN-style string
+  const databaseTypes = [
+    { value: "postgres", label: "postgres" },
+    { value: "sqlserver", label: "sqlserver" },
+  ]
+
+  const saveConnectionFromDialog = async () => {
     const segments = [
       dbHost && `host=${dbHost}`,
       dbUser && `user=${dbUser}`,
@@ -73,26 +59,58 @@ export function CreateConnectionDialog({
       `sslmode=disable`,
     ].filter(Boolean) as string[]
     const conn = segments.join(",")
-    if (dialogFor) {
-      if (dialogFor.scope === "source") {
-        setSource(prev => ({ ...prev, [dialogFor.field]: conn }))
-      } else {
-        setDest(prev => ({ ...prev, [dialogFor.field]: conn }))
-      }
+    console.log(conn)
+    setPlanConn(conn)
+    try {
+      const username = 'Administrator'
+      await createConfig({
+        username,
+        plan_dsn: conn
+      })
+      toast.success('Configuration saved')
+      onOpenChange(false)
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to save configuration'
+      toast.error(message)
     }
-    onOpenChange(false)
   }
 
-  const databaseTypes = [
-    { value: "postgres", label: "postgres" },
-    { value: "sqlserver", label: "sqlserver" },
-  ]
+  const testConnection = async () => {
+    const segments = [
+      dbHost && `host=${dbHost}`,
+      dbUser && `user=${dbUser}`,
+      dbPass && `password=${dbPass}`,
+      dbName && `dbname=${dbName}`,
+      dbPort && `port=${dbPort}`,
+      dbType && `type=${dbType}`,
+      // Defaults as requested
+      `sslmode=disable`,
+    ].filter(Boolean) as string[]
+    const conn = segments.join(",")
 
+    if (!conn || !conn.trim()) {
+      toast.warning("Please enter a connection string to test")
+      return
+    }
+
+    try {
+      const result = await testConnectionApi(conn.trim())
+
+      if (result.success) {
+        toast.success(result.message || "Connection successful")
+      } else {
+        toast.error(result.error || "Connection failed")
+      }
+    } catch (err: any) {
+      const errorMessage = err?.response?.data?.error || err?.message || "Failed to test connection"
+      toast.error(errorMessage)
+    }
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Edit Connection" : "Create Connection"}</DialogTitle>
+          <DialogTitle>{"Edit Connection"}</DialogTitle>
           <DialogDescription>Enter database connection details.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -122,6 +140,9 @@ export function CreateConnectionDialog({
           </div>
         </div>
         <DialogFooter>
+          <Button variant="outline" onClick={testConnection}>
+            Test Connection
+          </Button>
           <Button onClick={saveConnectionFromDialog}>
             Save Connection
           </Button>
