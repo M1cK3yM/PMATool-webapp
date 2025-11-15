@@ -36,7 +36,7 @@ export function TopMenubar() {
           <MenubarItem onSelect={() => router.push('/tranfer-configuration')}> 
             <SlidersHorizontal className="mr-2 h-4 w-4" /> Transfer Configuration
           </MenubarItem>
-          <MenubarItem onSelect={() => (window.location.href = '/')}>
+          <MenubarItem onSelect={() => router.push('/cost-analyzer')}>
             <BarChart3 className="mr-2 h-4 w-4" /> Advanced Cost Analyzer
           </MenubarItem>
           <MenubarItem onSelect={() => (window.location.href = '/')}>

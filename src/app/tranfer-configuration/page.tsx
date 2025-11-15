@@ -17,23 +17,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SelectFieldDialog } from "./components/selectfields-dialog"
 import { SaveXmlDialog } from "./components/saveXml-dialog"
-import { getRecords, transferData } from "@/lib/table-service"
+import { getRecords, transferData, type TransferError } from "@/lib/table-service"
 import { UpdateAlertDialog } from "./components/updateConfirmation-adialog"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@radix-ui/react-context-menu"
 import { toast } from "sonner"
+import { CreateConnectionDialog } from "./components/createConnection-dialog"
 
-type DbConfig = {
+export type DbConfig = {
   finance: string
   manufacturing: string
 }
@@ -55,14 +48,14 @@ type TaskTableRow = {
 }
 
 export default function TransferConfiguration() {
-  const [source, setSource] = useState<DbConfig>({ finance: "", manufacturing: "" })
-  const [dest, setDest] = useState<DbConfig>({ finance: "", manufacturing: "" })
+  const [source, setSource] = useState<DbConfig>({ finance: "", manufacturing: "", })
+  const [dest, setDest] = useState<DbConfig>({ finance: "", manufacturing: "", })
   const [loadedRows, setLoadedRows] = useState<TaskTableRow[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const tableBodyRef = useRef<HTMLTableSectionElement | null>(null)
   const [activeTab, setActiveTab] = useState("maintenance");
 
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
-  const [filename] = useState("ERPTables")
 
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   // Dialog state
@@ -80,6 +73,7 @@ export default function TransferConfiguration() {
     row: number;
     field: keyof TaskTableRow;
   } | null>(null)
+  const [transferErrors, setTransferErrors] = useState<Record<string, TransferError>>({})
 
   // Form state inside dialog
   const [dbHost, setDbHost] = useState("")
@@ -87,14 +81,14 @@ export default function TransferConfiguration() {
   const [dbName, setDbName] = useState("")
   const [dbUser, setDbUser] = useState("")
   const [dbPass, setDbPass] = useState("")
+  const [dbType, setDbType] = useState("")
 
   function openCreateDialog(scope: "source" | "dest", field: keyof DbConfig, currentValue: string) {
     setDialogFor({ scope, field })
     setIsEditing(Boolean(currentValue && currentValue.trim().length > 0))
     // Attempt to parse both semicolon-delimited (ODBC) and space-delimited (DSN) formats
     const parseConnection = (value: string) => {
-      const lower = value.toLowerCase()
-      const delimiter = value.includes(";") ? ";" : " "
+      const delimiter = value.includes(";") ? ";" : ","
       const entries = value
         .split(delimiter)
         .map(s => s.trim())
@@ -112,45 +106,27 @@ export default function TransferConfiguration() {
       const user = map.get("user id") || map.get("uid") || map.get("user") || ""
       const pass = map.get("password") || map.get("pwd") || ""
       const port = map.get("port") || ""
-      return { host, db, user, pass, port }
+      const dbType = map.get("type") || ""
+      return { host, db, user, pass, port, dbType }
     }
     if (currentValue && currentValue.trim().length > 0) {
       const parsed = parseConnection(currentValue)
+      console.log("parsed", parsed)
       setDbHost(parsed.host)
       setDbName(parsed.db)
       setDbUser(parsed.user)
       setDbPass(parsed.pass)
       setDbPort(parsed.port)
+      setDbType(parsed.dbType)
     } else {
       setDbHost("")
       setDbName("")
       setDbUser("")
       setDbPass("")
       setDbPort("")
+      setDbType("")
     }
     setDialogOpen(true)
-  }
-
-  function saveConnectionFromDialog() {
-    // Build a Postgres DSN-style string
-    const segments = [
-      dbHost && `host=${dbHost}`,
-      dbUser && `user=${dbUser}`,
-      dbPass && `password=${dbPass}`,
-      dbName && `dbname=${dbName}`,
-      dbPort && `port=${dbPort}`,
-      // Defaults as requested
-      `sslmode=disable`,
-    ].filter(Boolean) as string[]
-    const conn = segments.join(" ")
-    if (dialogFor) {
-      if (dialogFor.scope === "source") {
-        setSource(prev => ({ ...prev, [dialogFor.field]: conn }))
-      } else {
-        setDest(prev => ({ ...prev, [dialogFor.field]: conn }))
-      }
-    }
-    setDialogOpen(false)
   }
 
   async function testConnection(value: string) {
@@ -209,14 +185,33 @@ export default function TransferConfiguration() {
       }
 
       const result = await transferData(username, rowsToTransfer)
-      toast.success(result)
+      
+      // Update error state
+      if (result.errors && Object.keys(result.errors).length > 0) {
+        setTransferErrors(result.errors)
+      } else {
+        setTransferErrors({})
+      }
 
+      // Show toast with summary
+      if (result.failedTables > 0) {
+        toast.warning(`${result.message} - ${result.successTables} succeeded, ${result.failedTables} failed`)
+      } else {
+        toast.success(`${result.message} - All ${result.successTables} tables transferred successfully`)
+      }
+
+      // Update rows with success/failure status
       setLoadedRows(prev =>
-        prev.map(r =>
-          r.includeInUpdate
-            ? { ...r, updateResults: "Transferred successfully" }
-            : r
-        )
+        prev.map(r => {
+          if (!r.includeInUpdate) return r
+          
+          const tableError = result.errors?.[r.physicalName]
+          if (tableError) {
+            return { ...r, updateResults: `Failed: ${tableError.error}` }
+          } else {
+            return { ...r, updateResults: "Transferred successfully" }
+          }
+        })
       )
     } catch (err: any) {
       console.error(err)
@@ -235,6 +230,8 @@ export default function TransferConfiguration() {
         src_man_con_str: source.manufacturing,
         des_fin_con_str: dest.finance,
         des_man_con_str: dest.manufacturing,
+        plan_dsn: "",
+        plan_db_type: "",
       })
       toast.success('Configuration saved')
     } catch (err: any) {
@@ -320,47 +317,6 @@ export default function TransferConfiguration() {
       })
   }, [])
 
-  function exportRowsAsXml(filename: string, rows: TaskTableRow[]) {
-    const escapeXml = (s: string) => s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;")
-
-    const items = rows.map(r => {
-      const selectFields = (r.selectFields || []).join(", ");
-      const excludeFields = (r.excludeFields || []).join(", ");
-
-      return (`    <taskTable>\n`
-        + `      <ModuleName>${escapeXml(r.moduleName || '')}</ModuleName>\n`
-        + `      <PhysicalName>${escapeXml(r.physicalName || '')}</PhysicalName>\n`
-        + `      <TableType>${escapeXml(r.tableType || '')}</TableType>\n`
-        + `      <SelectFields>${escapeXml(selectFields)}</SelectFields>\n`
-        + `      <ExcludeFields>${escapeXml(excludeFields)}</ExcludeFields>\n`
-        + `      <DatabaseName>${escapeXml(r.databaseName || '')}</DatabaseName>\n`
-        + `      <IncludeInUpdate>${r.includeInUpdate ? 'true' : 'false'}</IncludeInUpdate>\n`
-        + `      <UpdateResults>${escapeXml(r.updateResults || '')}</UpdateResults>\n`
-        + (r.sqlBefore ? `      <SqlAfter>${escapeXml(r.sqlBefore)}</SqlAfter>\n` : '')
-        + (r.sqlAfter ? `      <SqlAfter>${escapeXml(r.sqlAfter)}</SqlAfter>\n` : '')
-        + (r.updateMode ? `      <UpdateMode>${escapeXml(r.updateMode)}</UpdateMode>\n` : '')
-        + (r.conditions ? `      <Conditions>${escapeXml(r.conditions)}</Conditions>\n` : '')
-        + `    </taskTable>`)
-    }
-    ).join("\n")
-
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<ERPTables>\n${items}\n</ERPTables>\n`
-    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename + '.xml'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
-
   function addRow() {
     const newRow: TaskTableRow = {
       moduleName: "",
@@ -371,11 +327,24 @@ export default function TransferConfiguration() {
       updateResults: "",
       conditions: "",
     }
+    const newIndex = loadedRows.length
     setLoadedRows(prev => [...prev, newRow])
+    
+    // Scroll to the new row after it's rendered
+    setTimeout(() => {
+      // Find the last row (the newly added one) and scroll to it
+      const rows = tableBodyRef.current?.querySelectorAll('tr')
+      if (rows && rows.length > 0) {
+        const lastRow = rows[rows.length - 1]
+        lastRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        // Auto-focus the first editable field (moduleName)
+        setEditingCell({ row: newIndex, field: 'moduleName' })
+      }
+    }, 0)
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] p-4 space-y-4">
+    <div className="mx-auto max-w-[85vw] space-y-4">
       {/* Controls toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" onClick={handleLoad} className="gap-2"><FolderOpen className="h-4 w-4" /> Load</Button>
@@ -504,7 +473,7 @@ export default function TransferConfiguration() {
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody ref={tableBodyRef}>
                   {loadedRows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-muted-foreground">No data loaded. Click Load to import an ERPTables XML.</TableCell>
@@ -784,11 +753,21 @@ export default function TransferConfiguration() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium">—</TableCell>
-                    <TableCell>No errors yet</TableCell>
-                    <TableCell>—</TableCell>
-                  </TableRow>
+                  {Object.keys(transferErrors).length === 0 ? (
+                    <TableRow>
+                      <TableCell className="font-medium">—</TableCell>
+                      <TableCell>No errors yet</TableCell>
+                      <TableCell>—</TableCell>
+                    </TableRow>
+                  ) : (
+                    Object.entries(transferErrors).map(([tableName, error]) => (
+                      <TableRow key={tableName}>
+                        <TableCell className="font-medium">{tableName}</TableCell>
+                        <TableCell className="text-red-600">{error.error}</TableCell>
+                        <TableCell>{new Date(error.timestamp).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -957,41 +936,22 @@ export default function TransferConfiguration() {
       <SelectFieldDialog dbType={selectedRow?.databaseName ?? ""} tableName={selectedRow?.physicalName ?? ""} defaultFields={selectedRow?.selectFields ?? []} onSave={handleSelectFeilds} onOpenChange={setSelectDialogOpen} open={selectDialogOpen}></SelectFieldDialog>
       <SaveXmlDialog open={saveDialogOpen} onSave={handleSave} onOpenChange={setSaveDialogOpen} />
       <UpdateAlertDialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen} onContinue={handleUpdate} />
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{isEditing ? "Edit Connection" : "Create Connection"}</DialogTitle>
-            <DialogDescription>Enter database connection details.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid grid-cols-4 items-center gap-2">
-              <Label htmlFor="host" className="col-span-1 text-sm">Host</Label>
-              <Input id="host" className="col-span-3" value={dbHost} onChange={(e) => setDbHost(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-2">
-              <Label htmlFor="port" className="col-span-1 text-sm">Port</Label>
-              <Input id="port" className="col-span-3" value={dbPort} onChange={(e) => setDbPort(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-2">
-              <Label htmlFor="db" className="col-span-1 text-sm">Database</Label>
-              <Input id="db" className="col-span-3" value={dbName} onChange={(e) => setDbName(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-2">
-              <Label htmlFor="user" className="col-span-1 text-sm">User</Label>
-              <Input id="user" className="col-span-3" value={dbUser} onChange={(e) => setDbUser(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-2">
-              <Label htmlFor="pass" className="col-span-1 text-sm">Password</Label>
-              <Input id="pass" type="password" className="col-span-3" value={dbPass} onChange={(e) => setDbPass(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={saveConnectionFromDialog}>
-              Save Connection
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateConnectionDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        isEditing={isEditing}
+        dialogFor={dialogFor}
+        setSource={setSource}
+        setDest={setDest}
+        dbConnection={{
+          dbHost,
+          dbPort,
+          dbName,
+          dbUser,
+          dbPass,
+          dbType
+        }}
+      />
     </div >
   )
 }
@@ -1040,6 +1000,33 @@ function parseErpTablesXml(xmlText: string): TaskTableRow[] {
   return items
 }
 
+function maskPasswordInConnectionString(connStr: string): string {
+  if (!connStr) return connStr
+  
+  // Handle both semicolon and comma delimiters
+  const delimiter = connStr.includes(";") ? ";" : ","
+  const parts = connStr.split(delimiter)
+  
+  return parts.map(part => {
+    const trimmed = part.trim()
+    const lowerTrimmed = trimmed.toLowerCase()
+    
+    // Check for various password key formats
+    if (lowerTrimmed.startsWith("password=") || 
+        lowerTrimmed.startsWith("pwd=") ||
+        lowerTrimmed.startsWith("pass=")) {
+      const eqIdx = trimmed.indexOf("=")
+      if (eqIdx !== -1) {
+        const key = trimmed.substring(0, eqIdx + 1)
+        const passwordValue = trimmed.substring(eqIdx + 1)
+        // Mask the password value with asterisks
+        return `${key}${passwordValue ? "****" : ""}`
+      }
+    }
+    return part
+  }).join(delimiter)
+}
+
 function FieldRow({ id, label, value, onChange, onCreate, onTest }: {
   id: string;
   label: string;
@@ -1048,15 +1035,20 @@ function FieldRow({ id, label, value, onChange, onCreate, onTest }: {
   onCreate: () => void;
   onTest: () => void;
 }) {
+  const [isFocused, setIsFocused] = useState(false)
+  
   return (
     <div className="grid grid-cols-12 items-center gap-2">
       <Label htmlFor={id} className="col-span-3 text-sm">{label}:</Label>
       <Input
         id={id}
-        value={value}
+        value={isFocused ? value : maskPasswordInConnectionString(value)}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
         className="col-span-7"
         placeholder="Connection string"
+        type="text"
       />
       <div className="col-span-1 flex items-center justify-end">
         <DropdownMenu>

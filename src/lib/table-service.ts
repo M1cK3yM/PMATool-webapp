@@ -26,6 +26,20 @@ export type TableDefinition = {
   conditions: string
   tableDesc: string
 }
+
+export type TransferError = {
+  error: string
+  timestamp: string
+}
+
+export type TransferResponse = {
+  message: string
+  totalTables: number
+  failedTables: number
+  successTables: number
+  errors?: Record<string, TransferError>
+}
+
 export async function getFeilds(payload: GetFieldsDto) {
   const url = "/getFields"
   const { data } = await apiClient.post(url, payload)
@@ -38,8 +52,8 @@ export async function getRecords(payload: GetFieldsDto) {
   return data as Number
 }
 
-export async function transferData(username: string, payload: TableDefinition[]) {
+export async function transferData(username: string, payload: TableDefinition[]): Promise<TransferResponse> {
   const url = `/transfer/${encodeURIComponent(username)}`
   const { data } = await apiClient.post(url, payload)
-  return data.message as string;
+  return data as TransferResponse
 }
