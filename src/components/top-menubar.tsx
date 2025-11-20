@@ -30,7 +30,7 @@ export function TopMenubar() {
       <MenubarMenu>
         <MenubarTrigger>Tools</MenubarTrigger>
         <MenubarContent>
-          <MenubarItem onSelect={() => (window.location.href = '/')}>
+          <MenubarItem onSelect={() => router.push('/data-loader')}>
             <Database className="mr-2 h-4 w-4" /> Advanced Data Loader
           </MenubarItem>
           <MenubarItem onSelect={() => router.push('/tranfer-configuration')}> 

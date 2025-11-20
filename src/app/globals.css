@@ -146,11 +146,14 @@ html {
     border-bottom: 1px solid hsl(var(--border));
 }
 
+/* This entire block is removed because it conflicts with <ScrollArea> */
+/*
 .table-container {
   max-height: calc(100vh - 600px);
   overflow-y: auto;
   border-radius: 0.5rem;
 }
+*/
 
 /* Add shadow to sticky header when scrolled */
 .table-container:not(:first-child) .sticky-header {

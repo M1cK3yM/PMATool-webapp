@@ -90,6 +90,7 @@ export default function TransferConfiguration() {
 
   function openCreateDialog(scope: "source" | "dest", field: keyof DbConfig, currentValue: string) {
     setDialogFor({ scope, field })
+    console.log("scope:", scope, "field:", field, "currentValue:", currentValue)
     setIsEditing(Boolean(currentValue && currentValue.trim().length > 0))
     // Attempt to parse both semicolon-delimited (ODBC) and space-delimited (DSN) formats
     const parseConnection = (value: string) => {

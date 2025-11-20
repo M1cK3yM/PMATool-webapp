@@ -28,12 +28,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      {/* We make the body a full-height flex column */}
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col h-screen`}
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NavBar />
-          <div className="mx-auto max-w-[1200px] p-4 space-y-4">
+          {/* This div now grows to fill the remaining space (flex-1)
+              and becomes a flex container itself, forcing its children
+              to occupy a defined space. min-h-0 prevents it from
+              overflowing the screen. */}
+          <div className="mx-auto max-w-[1200px] p-4 space-y-4 flex-1 flex flex-col w-full min-h-0">
             <TopMenubar />
             {children}
           </div>
