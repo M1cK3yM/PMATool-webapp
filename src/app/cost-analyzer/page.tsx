@@ -9,13 +9,33 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { FileText, Play, Users, Settings, Sigma, Save, TableConfig, TableConfigIcon } from "lucide-react"
 import MasterMRP from "./sections/MasterMRP"
+import { ExecutePlanResponse, MrpNode } from "@/lib/mrp-service";
 import ViewPlanDialog from "./components/ViewPlan-dialog"
 import ConfigureDialog from "./components/Configure-dialog"
+import ExecutePlanDialog from "./components/ExecutePlan-dialog";
+import LaborSummaryDialog from "./components/LaborSummary-dialog";
+import MachineSummaryDialog from "./components/MachineSummary-dialog";
+import MiscSummaryDialog from "./components/MiscSummary-dialog";
 import { getConfig } from "@/lib/config-service"
 
 export default function CostAnalyzer() {
   const [viewPlanOpen, setViewPlanOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [executePlanOpen, setExecutePlanOpen] = useState(false);
+  const [laborSummaryOpen, setLaborSummaryOpen] = useState(false);
+  const [machineSummaryOpen, setMachineSummaryOpen] = useState(false);
+  const [miscSummaryOpen, setMiscSummaryOpen] = useState(false);
+  const [mrpData, setMrpData] = useState<ExecutePlanResponse | null>(null);
+  const [selectedMrpNode, setSelectedMrpNode] = useState<MrpNode | null>(null);
+
+  const handlePlanExecuted = (data: ExecutePlanResponse) => {
+    setMrpData(data);
+    setSelectedMrpNode(data.Root); // Select the root node by default
+  };
+
+  const handleMrpRowClick = (node: MrpNode) => {
+    setSelectedMrpNode(node);
+  };
 
   const [dbHost, setDbHost] = useState("")
   const [dbPort, setDbPort] = useState("")
@@ -85,16 +105,16 @@ export default function CostAnalyzer() {
         <Button variant="outline" size="sm" className="gap-2" onClick={() => setViewPlanOpen(true)}>
           <FileText className="h-4 w-4" /> View Plan
         </Button>
-        <Button variant="default" size="sm" className="gap-2">
+        <Button variant="default" size="sm" className="gap-2" onClick={() => setExecutePlanOpen(true)} >
           <Play className="h-4 w-4" /> Execute
         </Button>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => setLaborSummaryOpen(true)}>
           <Users className="h-4 w-4" /> Labor
         </Button>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => setMachineSummaryOpen(true)}>
           <Settings className="h-4 w-4" /> Machine
         </Button>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => setMiscSummaryOpen(true)}>
           <Sigma className="h-4 w-4" /> Misc
         </Button>
         <Button variant="outline" size="sm" className="gap-2" onClick={openConfigDialog}>
@@ -106,6 +126,10 @@ export default function CostAnalyzer() {
       </div>
 
       <ViewPlanDialog open={viewPlanOpen} onOpenChange={setViewPlanOpen} />
+      <ExecutePlanDialog open={executePlanOpen} onOpenChange={setExecutePlanOpen} onPlanExecuted={handlePlanExecuted} />
+      <LaborSummaryDialog open={laborSummaryOpen} onOpenChange={setLaborSummaryOpen} data={mrpData} />
+      <MachineSummaryDialog open={machineSummaryOpen} onOpenChange={setMachineSummaryOpen} data={mrpData} />
+      <MiscSummaryDialog open={miscSummaryOpen} onOpenChange={setMiscSummaryOpen} data={mrpData} />
       <ConfigureDialog
         open={configOpen}
         onOpenChange={setConfigOpen}
@@ -126,7 +150,7 @@ export default function CostAnalyzer() {
           <ResizablePanel defaultSize={65} minSize={40}>
             <ResizablePanelGroup direction="vertical" className="w-50">
               <ResizablePanel defaultSize={65} minSize={40}>
-                <MasterMRP />
+                <MasterMRP data={mrpData} onRowClick={handleMrpRowClick} selectedNode={selectedMrpNode} />
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={35} minSize={20} className="border-t">
@@ -153,46 +177,203 @@ export default function CostAnalyzer() {
                         <div className="text-xs text-muted-foreground mb-2">
                           (Source): Material Inputs: This part uses the following products as Material Input
                         </div>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Stage</TableHead>
+                              <TableHead>Part Code</TableHead>
+                              <TableHead>WH</TableHead>
+                              <TableHead>Part Desc</TableHead>
+                              <TableHead>Recipe</TableHead>
+                              <TableHead>Setup Qty</TableHead>
+                              <TableHead>Input Qty</TableHead>
+                              <TableHead>In Qty/Batch</TableHead>
+                              <TableHead>UOM</TableHead>
+                              <TableHead>Nom. In Qty.</TableHead>
+                              <TableHead>Nom U...</TableHead>
+                              <TableHead>Std Cost</TableHead>
+                              <TableHead>Batches</TableHead>
+                              <TableHead>Req Qty (Nom)</TableHead>
+                              <TableHead>User Qty</TableHead>
+                              <TableHead>Column</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedMrpNode?.materialIns && selectedMrpNode.materialIns.length > 0 ? (
+                              selectedMrpNode.materialIns.map((material, index) => (
+                                <TableRow key={index}>
+                                  <TableCell>{material.processStage}</TableCell>
+                                  <TableCell>{material.partCode}</TableCell>
+                                  <TableCell>{material.warehouse}</TableCell>
+                                  <TableCell>{material.detailDesc}</TableCell>
+                                  <TableCell>{material.recipeCode}</TableCell>
+                                  <TableCell>{material.setupQty}</TableCell>
+                                  <TableCell>{material.inputQty}</TableCell>
+                                  <TableCell>{material.totalQty}</TableCell>
+                                  <TableCell>{material.inputUom}</TableCell>
+                                  <TableCell>{material.inputQtyNom}</TableCell>
+                                  <TableCell>{material.inputNomUom}</TableCell>
+                                  <TableCell>{/* Std Cost - Not in materialIns */}</TableCell>
+                                  <TableCell>{/* Batches - Not in materialIns */}</TableCell>
+                                  <TableCell>{material.totalQtyNom}</TableCell>
+                                  <TableCell>{material.userQty}</TableCell>
+                                  <TableCell>{/* Column - Not in materialIns */}</TableCell>
+                                </TableRow>
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={16} className="text-center text-muted-foreground py-4">
+                                  {selectedMrpNode ? 'No material data for selected part' : 'No data available'}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </TabsContent>
+                      <TabsContent value="machine" className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-2">Machine usage information</div>
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="w-[80px]">Stage</TableHead>
-                                <TableHead className="w-[100px]">Part Code</TableHead>
-                                <TableHead className="w-[80px]">WH</TableHead>
-                                <TableHead className="w-[120px]">Part Desc</TableHead>
-                                <TableHead className="w-[80px]">Recipe</TableHead>
-                                <TableHead className="w-[90px]">Setup Qty</TableHead>
-                                <TableHead className="w-[90px]">Input Qty</TableHead>
-                                <TableHead className="w-[100px]">In Qty/Batch</TableHead>
-                                <TableHead className="w-[70px]">UOM</TableHead>
-                                <TableHead className="w-[90px]">Nom. In Qty.</TableHead>
-                                <TableHead className="w-[80px]">Nom U...</TableHead>
-                                <TableHead className="w-[90px]">Std Cost</TableHead>
-                                <TableHead className="w-[80px]">Batches</TableHead>
-                                <TableHead className="w-[100px]">Req Qty (Nom)</TableHead>
-                                <TableHead className="w-[90px]">User Qty</TableHead>
-                                <TableHead className="w-[80px]">Column</TableHead>
+                                <TableHead>Machine</TableHead>
+                                <TableHead>Setup Time</TableHead>
+                                <TableHead>Setup Unit</TableHead>
+                                <TableHead>Run Rate Flag</TableHead>
+                                <TableHead>Run Time</TableHead>
+                                <TableHead>Run Rate</TableHead>
+                                <TableHead>Run Time Unit</TableHead>
+                                <TableHead>Setup Hours</TableHead>
+                                <TableHead>Runtime Hours</TableHead>
+                                <TableHead>Batch Hours</TableHead>
+                                <TableHead>Recovery Rate</TableHead>
+                                <TableHead>Direct Cost</TableHead>
+                                <TableHead>OH Cost</TableHead>
+                                <TableHead>OH Alloc Cost</TableHead>
                               </TableRow>
                             </TableHeader>
-                            <TableBody className="h-full">
-                              <TableRow>
-                                <TableCell colSpan={16} className="text-center text-muted-foreground py-4">
-                                  No data available
-                                </TableCell>
-                              </TableRow>
+                            <TableBody>
+                              {selectedMrpNode?.machineIns && selectedMrpNode.machineIns.length > 0 ? (
+                                selectedMrpNode.machineIns.map((machine, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell>{machine.machineCode}</TableCell>
+                                    <TableCell>{machine.setupTime.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.setupTimeUnit}</TableCell>
+                                    <TableCell>{machine.runRateFlag}</TableCell>
+                                    <TableCell>{machine.runTime.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.runRate.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.runTimeUnit}</TableCell>
+                                    <TableCell>{machine.setupHours.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.runtimeHours.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.batchHours.toFixed(2)}</TableCell>
+                                    <TableCell>{machine.recoveryRate.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.directCost.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.ohCost.toFixed(4)}</TableCell>
+                                    <TableCell>{machine.ohAllocationCost.toFixed(4)}</TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={14} className="text-center text-muted-foreground py-4">
+                                    No machine data available
+                                  </TableCell>
+                                </TableRow>
+                              )}
                             </TableBody>
                           </Table>
                         </div>
                       </TabsContent>
-                      <TabsContent value="machine" className="mt-2">
-                        <div className="text-xs text-muted-foreground mb-2">Machine usage information</div>
-                      </TabsContent>
                       <TabsContent value="labor" className="mt-2">
                         <div className="text-xs text-muted-foreground mb-2">Labor usage information</div>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Labor Class</TableHead>
+                                <TableHead>Labor Units</TableHead>
+                                <TableHead>Setup Time</TableHead>
+                                <TableHead>Setup Unit</TableHead>
+                                <TableHead>Run Rate Flag</TableHead>
+                                <TableHead>Run Time</TableHead>
+                                <TableHead>Run Rate</TableHead>
+                                <TableHead>Run Time Unit</TableHead>
+                                <TableHead>Batch Hours</TableHead>
+                                <TableHead>Total Hours</TableHead>
+                                <TableHead>Recovery Rate</TableHead>
+                                <TableHead>Direct Cost</TableHead>
+                                <TableHead>OH Cost</TableHead>
+                                <TableHead>OH Alloc Cost</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {selectedMrpNode?.labIns && selectedMrpNode.labIns.length > 0 ? (
+                                selectedMrpNode.labIns.map((labor, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell>{labor.laborClass}</TableCell>
+                                    <TableCell>{labor.laborUnits}</TableCell>
+                                    <TableCell>{labor.setupTime.toFixed(4)}</TableCell>
+                                    <TableCell>{labor.setupTimeUnit}</TableCell>
+                                    <TableCell>{labor.runRateFlag}</TableCell>
+                                    <TableCell>{labor.runTime.toFixed(4)}</TableCell>
+                                    <TableCell>{labor.runRate.toFixed(4)}</TableCell>
+                                    <TableCell>{labor.runTimeUnit}</TableCell>
+                                    <TableCell>{labor.batchHours.toFixed(2)}</TableCell>
+                                    <TableCell>{(labor.setupHours + labor.runtimeHours).toFixed(4)}</TableCell>
+                                    <TableCell>{labor.recoveryRate.toFixed(4)}</TableCell>
+                                    <TableCell>{labor.directCost.toFixed(4)}</TableCell>
+                                    <TableCell>{labor.ohCost.toFixed(4)}</TableCell>
+                                    <TableCell>{labor.ohAllocationCost.toFixed(4)}</TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={14} className="text-center text-muted-foreground py-4">
+                                    No labor data available
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
                       </TabsContent>
                       <TabsContent value="misc" className="mt-2">
                         <div className="text-xs text-muted-foreground mb-2">Miscellaneous information</div>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Input Product</TableHead>
+                                <TableHead>Fixed Cost</TableHead>
+                                <TableHead>Input Qty</TableHead>
+                                <TableHead>Input UOM</TableHead>
+                                <TableHead>Unit Cost</TableHead>
+                                <TableHead>Batches</TableHead>
+                                <TableHead>Total Cost</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {selectedMrpNode?.miscIns && selectedMrpNode.miscIns.length > 0 ? (
+                                selectedMrpNode.miscIns.map((misc, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell>{misc.inputProduct}</TableCell>
+                                    <TableCell>{misc.fixedCost.toFixed(4)}</TableCell>
+                                    <TableCell>{misc.inputQty.toFixed(2)}</TableCell>
+                                    <TableCell>{misc.inputUom}</TableCell>
+                                    <TableCell>{misc.unitCost.toFixed(4)}</TableCell>
+                                    <TableCell>{selectedMrpNode.totalBatches.toFixed(2)}</TableCell>
+                                    <TableCell>{(misc.inputQty * misc.unitCost).toFixed(2)}</TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={7} className="text-center text-muted-foreground py-4">
+                                    No miscellaneous data available
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
                       </TabsContent>
                     </Tabs>
                   </CardContent>
@@ -203,10 +384,10 @@ export default function CostAnalyzer() {
 
               {/* Part Usage Section */}
               <ResizablePanel defaultSize={30} minSize={20}>
-                <Card className="h-full flex flex-col rounded-none">
-                  <CardHeader className="pb-2">
+                <Card className="h-full py-2 gap-0 flex flex-col rounded-none">
+                  <CardHeader >
                     <CardTitle className="text-sm">Part Usage</CardTitle>
-                    <div className="text-xs text-muted-foreground mt-1">
+                    <div className="text-xs text-muted-foreground">
                       (Destination): Part Usage: This part is used to manufacture the following products.
                     </div>
                   </CardHeader>
@@ -231,11 +412,44 @@ export default function CostAnalyzer() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          <TableRow>
-                            <TableCell colSpan={13} className="text-center text-muted-foreground py-4">
-                              No data available
-                            </TableCell>
-                          </TableRow>
+                          {mrpData && selectedMrpNode && selectedMrpNode.partCode !== mrpData.Root.partCode ? (
+                            (() => {
+                              const partUsageData = mrpData.Root.materialIns?.filter(m => m.partCode === selectedMrpNode.partCode) || [];
+                              if (partUsageData.length > 0) {
+                                return partUsageData.map((usage, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell>{usage.partCode}</TableCell>
+                                    <TableCell>{usage.warehouse}</TableCell>
+                                    <TableCell>{usage.detailDesc}</TableCell>
+                                    <TableCell>{usage.processStage}</TableCell>
+                                    <TableCell>{usage.recipeCode}</TableCell>
+                                    <TableCell>{usage.setupQty.toFixed(2)}</TableCell>
+                                    <TableCell>{usage.inputQty.toFixed(2)}</TableCell>
+                                    <TableCell>{usage.totalQty.toFixed(4)}</TableCell>
+                                    <TableCell>{usage.inputUom}</TableCell>
+                                    <TableCell>{usage.totalQtyNom.toFixed(4)}</TableCell>
+                                    <TableCell>{usage.inputNomUom}</TableCell>
+                                    <TableCell>{mrpData.Root.totalBatches.toFixed(2)}</TableCell>
+                                    <TableCell>{usage.totalQtyNom.toFixed(4)}</TableCell>
+                                  </TableRow>
+                                ));
+                              } else {
+                                return (
+                                  <TableRow>
+                                    <TableCell colSpan={13} className="text-center text-muted-foreground py-4">
+                                      No usage data available for this part.
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              }
+                            })()
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={13} className="text-center text-muted-foreground py-4">
+                                Select a child part to see its usage information.
+                              </TableCell>
+                            </TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </div>
