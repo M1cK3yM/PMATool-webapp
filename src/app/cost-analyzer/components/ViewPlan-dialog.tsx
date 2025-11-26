@@ -29,8 +29,8 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
     partCode: "",
     warehouse: "",
     partDesc1: "",
-    plannedVolume: "",
-    addVolume: "",
+    plannedVolume: 0.0,
+    addVolume: 0.0,
     uom: "",
   }
 
@@ -68,13 +68,17 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
     !plan.partCode.trim() &&
     !plan.warehouse.trim() &&
     !plan.partDesc1.trim() &&
-    !plan.plannedVolume.trim() &&
-    !plan.addVolume.trim() &&
+    !plan.plannedVolume &&
+    !plan.addVolume &&
     !plan.uom.trim()
 
   function handlePlanFieldChange(index: number, field: keyof PlanRecord, value: string) {
-    setPlans((prev) =>
-      prev.map((plan, idx) => (idx === index ? { ...plan, [field]: value } : plan)),
+    setPlans((prev) => {
+      if (field === "plannedVolume" || field === "addVolume") {
+        return prev.map((plan, idx) => (idx === index ? { ...plan, [field]: parseFloat(value) } : plan))
+      }
+      return prev.map((plan, idx) => (idx === index ? { ...plan, [field]: value } : plan))
+    }
     )
   }
 
@@ -157,7 +161,7 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
                 <TableHead className="w-[200px]">Part Description</TableHead>
                 <TableHead className="w-[140px]">Planned Volume</TableHead>
                 <TableHead className="w-[120px]">Add Qty</TableHead>
-                <TableHead className="w-[80px]">UOM</TableHead>
+                <TableHead className="w-20">UOM</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -209,6 +213,8 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
                         value={plan.plannedVolume}
                         onChange={(e) => handlePlanFieldChange(index, "plannedVolume", e.target.value)}
                         placeholder="Planned volume"
+                        type="number"
+                        step={0.01}
                       />
                     </TableCell>
                     <TableCell>
@@ -216,6 +222,8 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
                         value={plan.addVolume}
                         onChange={(e) => handlePlanFieldChange(index, "addVolume", e.target.value)}
                         placeholder="Add qty"
+                        type="number"
+                        step={0.01}
                       />
                     </TableCell>
                     <TableCell>

@@ -5,8 +5,8 @@ export type PlanRecord = {
   partCode: string
   warehouse: string
   partDesc1: string
-  plannedVolume: string
-  addVolume: string
+  plannedVolume: number
+  addVolume: number
   uom: string
 }
 
