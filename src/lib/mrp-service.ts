@@ -1,15 +1,19 @@
-import axios from "axios"
 import { apiClient } from "./api-client"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
-
-// #region Type Definitions
-
 export interface ExecutePlanParams {
-  planId: string
-  resultName: string
-  userUom: string
-  username: string
+  planId: string;
+  resultName: string;
+  userUom?: string;
+  username: string;
+}
+
+export interface ExecuteSingleProductParams {
+  partCode: string;
+  warehouse: string;
+  uom: string;
+  userUom?: string;
+  plannedVolume: number;
+  username: string;
 }
 
 interface MaterialIn {
@@ -127,12 +131,36 @@ export interface ExecutePlanResponse {
 }
 
 export async function executePlan(params: ExecutePlanParams): Promise<ExecutePlanResponse> {
-  const { planId, username } = params
+  const { planId, username, userUom } = params;
   const payload = {
     id: planId,
     username,
-  }
+    userUom,
+  };
 
-  const { data } = await apiClient.post(`/mrp/executePlan/${planId}`, payload)
-  return data as ExecutePlanResponse
+  try {
+    const { data } = await apiClient.post(`/mrp/executePlan/${planId}`, payload);
+    return data as ExecutePlanResponse;
+  } catch (error) {
+    throw new Error(`An unexpected error occurred while executing plan ${planId}`);
+  }
+}
+
+export async function executeSingleProduct(params: ExecuteSingleProductParams): Promise<ExecutePlanResponse> {
+  const { partCode, warehouse, uom, userUom, plannedVolume, username } = params;
+  const payload = {
+    partCode,
+    warehouse,
+    uom,
+    userUom,
+    plannedVolume,
+    username,
+  };
+
+  try {
+    const response = await apiClient.post(`/mrp/executeCPlan`, payload);
+    return response.data as ExecutePlanResponse;
+  } catch (error) {
+    throw new Error(`An unexpected error occurred while executing for part ${partCode}`);
+  }
 }
