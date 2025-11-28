@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogHeader, DialogContent, DialogDescription, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,8 @@ export default function ConfigureDialog({ open, onOpenChange, dbConnection, setP
   const [dbUser, setDbUser] = useState(dbConnection.dbUser)
   const [dbPass, setDbPass] = useState(dbConnection.dbPass)
   const [dbType, setDbType] = useState(dbConnection.dbType)
+  const [dbEnc, setDbEnc] = useState(true)
+
 
   useEffect(() => {
     setDbHost(dbConnection.dbHost)
@@ -56,7 +59,7 @@ export default function ConfigureDialog({ open, onOpenChange, dbConnection, setP
       dbPort && `port=${dbPort}`,
       dbType && `type=${dbType}`,
       // Defaults as requested
-      `sslmode=disable`,
+      dbEnc && `dbEnc=disable`,
     ].filter(Boolean) as string[]
     const conn = segments.join(",")
     console.log(conn)
@@ -138,6 +141,15 @@ export default function ConfigureDialog({ open, onOpenChange, dbConnection, setP
             <Label htmlFor="pass" className="col-span-1 text-sm">Password</Label>
             <Input id="pass" type="password" className="col-span-3" value={dbPass} onChange={(e) => setDbPass(e.target.value)} />
           </div>
+          {dbType === 'sqlserver' && (
+            <div className="grid grid-cols-4 items-center gap-2">
+              <Label htmlFor="dbEnc" className="col-span-1 text-sm">Disable Encryption</Label>
+              <div className="col-span-3 flex items-center">
+                <Checkbox id="dbEnc" checked={dbEnc} onCheckedChange={() => setDbEnc(!dbEnc)} />
+                <span className="ml-2 text-xs text-gray-500">Enable this to disable encryption for older SQL servers.</span>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={testConnection}>

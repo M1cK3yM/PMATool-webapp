@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
 import { DbConfig } from "../page"
@@ -50,6 +51,8 @@ export function CreateConnectionDialog({
   const [dbUser, setDbUser] = useState(dbConnection.dbUser)
   const [dbPass, setDbPass] = useState(dbConnection.dbPass)
   const [dbType, setDbType] = useState(dbConnection.dbType)
+  const [dbEnc, setDbEnc] = useState(true)
+
 
   useEffect(() => {
     setDbHost(dbConnection.dbHost)
@@ -70,7 +73,7 @@ export function CreateConnectionDialog({
       dbPort && `port=${dbPort}`,
       dbType && `type=${dbType}`,
       // Defaults as requested
-      `sslmode=disable`,
+      dbEnc && `dbEnc=disable`,
     ].filter(Boolean) as string[]
     const conn = segments.join(",")
     if (dialogFor) {
@@ -120,6 +123,15 @@ export function CreateConnectionDialog({
             <Label htmlFor="pass" className="col-span-1 text-sm">Password</Label>
             <Input id="pass" type="password" className="col-span-3" value={dbPass} onChange={(e) => setDbPass(e.target.value)} />
           </div>
+          {dbType === 'sqlserver' && (
+            <div className="grid grid-cols-4 items-center gap-2">
+              <Label htmlFor="dbEnc" className="col-span-1 text-sm">Disable Encryption</Label>
+              <div className="col-span-3 flex items-center">
+                <Checkbox id="dbEnc" checked={dbEnc} onCheckedChange={() => setDbEnc(!dbEnc)} />
+                <span className="ml-2 text-xs text-gray-500">Enable this to disable encryption for older SQL servers.</span>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button onClick={saveConnectionFromDialog}>
