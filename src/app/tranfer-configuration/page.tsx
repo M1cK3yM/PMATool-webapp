@@ -61,6 +61,7 @@ type TaskTableRow = {
   conditions?: string
   tableDesc?: string
   tablePrefix?: string
+  cTableName?: string
 }
 
 export default function TransferConfiguration() {
@@ -180,7 +181,8 @@ export default function TransferConfiguration() {
       "updateMode",
       "sqlAfter",
       "conditions",
-      "tablePrefix"
+      "tablePrefix",
+      "cTableName"
     ];
 
     const rowCount = document.querySelectorAll('tbody tr').length;
@@ -249,6 +251,7 @@ export default function TransferConfiguration() {
           conditions: r.conditions || "",
           tableDesc: r.tableDesc || "",
           tablePrefix: r.tablePrefix || "",
+          cTablename: r.cTableName || "",
         }))
 
       if (rowsToTransfer.length === 0) {
@@ -488,6 +491,7 @@ export default function TransferConfiguration() {
       updateResults: "",
       conditions: "",
       tablePrefix: "",
+      cTableName: "",
     }
     const newIndex = loadedRows.length
     setLoadedRows(prev => [...prev, newRow])
@@ -657,13 +661,14 @@ export default function TransferConfiguration() {
                         </ContextMenuItem>
                       </ContextMenuContent>
                     </ContextMenu>
+                    <TableHead>Custom Table Name</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody ref={tableBodyRef}>
                   {loadedRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-muted-foreground">No data loaded. Click Load to import an ERPTables XML.</TableCell>
+                      <TableCell colSpan={12} className="py-5 text-center text-muted-foreground">No data loaded. Click Load to import an ERPTables XML.</TableCell>
                     </TableRow>
                   ) : (
                     loadedRows.map((r, idx) => (
@@ -896,6 +901,30 @@ export default function TransferConfiguration() {
                                 />
                               ) : (
                                 <span className="block cursor-text select-text">{r.tablePrefix || '—'}</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-medium" onDoubleClick={() => setEditingCell({ row: idx, field: 'cTableName' })}>
+                              {editingCell?.row === idx && editingCell.field === 'cTableName' ? (
+                                <Input
+                                  autoFocus
+                                  value={r.cTableName || ''}
+                                  onChange={(e) => {
+                                    const next = [...loadedRows]
+                                    next[idx] = { ...next[idx], cTableName: e.target.value }
+                                    setLoadedRows(next)
+                                  }}
+                                  onBlur={() => setEditingCell(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === 'Escape') setEditingCell(null)
+                                    if (e.key === "Tab") {
+                                      e.preventDefault();
+                                      focusNextCell(idx, "cTableName");
+                                    }
+                                  }}
+                                  placeholder="Table Prefix"
+                                />
+                              ) : (
+                                <span className="block cursor-text select-text">{r.cTableName || '—'}</span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -1178,6 +1207,17 @@ export default function TransferConfiguration() {
 
                   <div>
                     <label className="block text-sm text-muted-foreground mb-1">
+                      Custom Table Name:
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedRow.cTableName || ""}
+                      onChange={(e) => updateSelectedRow({ cTableName: e.target.value })}
+                      className="w-full border rounded px-2 py-1 text-sm bg-background"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-1">
                       Update Results:
                     </label>
                     <textarea
@@ -1331,6 +1371,7 @@ function parseErpTablesXml(xmlText: string): TaskTableRow[] {
       excludeFields,
       tableDesc: find('TableDesc') || undefined,
       tablePrefix: find('TablePrefix') || undefined,
+      cTableName: find('CTableName') || undefined,
     })
   }
   return items
@@ -1366,6 +1407,7 @@ function generateErpTablesXml(rows: TaskTableRow[]): string {
       ${row.conditions ? `<Conditions>${escapeXml(row.conditions)}</Conditions>` : ''}
       ${row.tableDesc ? `<TableDesc>${escapeXml(row.tableDesc)}</TableDesc>` : ''}
       ${row.tablePrefix ? `<TablePrefix>${escapeXml(row.tablePrefix)}</TablePrefix>` : ''}
+      ${row.cTableName ? `<CTableName>${escapeXml(row.cTableName)}</CTableName>` : ''}
     </taskTable>`
   }).join('\n')
 
