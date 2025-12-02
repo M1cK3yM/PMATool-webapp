@@ -27,8 +27,9 @@ export default function TemplateList({
 }: TemplateListProps) {
   
   return (
-    <div className="flex-1">
-    <ScrollArea className="h-48 rounded-md border">
+    // Changed: h-full ensures the scroll area takes the entire available space provided by the parent CardContent
+    <div className="h-full">
+      <ScrollArea className="h-full border rounded-md">
         <Table>
           <TableHeader>
               <TableRow>
@@ -83,7 +84,7 @@ export default function TemplateList({
             )}
         </TableBody>
       </Table>
-  </ScrollArea>
+    </ScrollArea>
     </div>
   )
 }

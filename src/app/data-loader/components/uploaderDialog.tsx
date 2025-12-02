@@ -1,4 +1,3 @@
-// new code file created
 "use client";
 
 import { useState } from "react";
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
+import { apiClient } from "@/lib/api-client";
 
 interface UploaderDialogProps {
   open: boolean; // Controls the visibility of the dialog.
@@ -39,14 +39,66 @@ export function UploaderDialog({
   const [separator, setSeparator] = useState(",");
   // State for the upload action mode (append, update, merge).
   const [uploadMode, setUploadMode] = useState("append");
+  // State for the selected file
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   /**
-   * Placeholder function for the actual data load process.
-   * This would typically call the backend to read the uploaded file and execute the import.
+   * Handles the file input change event.
    */
-  const handleLoad = () => {
-    toast.info("Data loading... (Not Implemented)");
-    onOpenChange(false);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+    } else {
+      setFile(null);
+    }
+  };
+
+  /**
+   * Reads the file and sends its content to the backend for processing.
+   */
+  const handleLoad = async () => {
+    if (!file) {
+      toast.error("Please select a file to upload.");
+      return;
+    }
+    if (!template) {
+      toast.error("No template selected.");
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Create a FormData object to send the file
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("username", "Administrator"); // Using default user for now
+      formData.append("tableName", template.tableName);
+      formData.append("databaseName", template.databaseName); // 'FIN' or 'MAN'
+      formData.append("separator", separator === "tab" ? "\t" : separator);
+      formData.append("mode", uploadMode); // 'append', 'update', 'merge'
+
+      // Send POST request to backend
+      // Note: We use apiClient but let the browser set the Content-Type for FormData
+      const response = await apiClient.post("/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      if (response.status === 200) {
+        toast.success(`Data loaded successfully: ${response.data.message}`);
+        onOpenChange(false);
+        setFile(null); // Reset file input
+      }
+    } catch (error: any) {
+      console.error("Upload failed", error);
+      const msg = error.response?.data?.error || error.message || "Unknown error";
+      toast.error(`Upload failed: ${msg}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -62,7 +114,12 @@ export function UploaderDialog({
           {/* File Input */}
           <div className="space-y-2">
             <Label htmlFor="dataFile">Data Load File</Label>
-            <Input id="dataFile" type="file" />
+            <Input 
+              id="dataFile" 
+              type="file" 
+              accept=".txt,.csv,.tsv" 
+              onChange={handleFileChange}
+            />
           </div>
           
           {/* Separator Configuration */}
@@ -134,7 +191,9 @@ export function UploaderDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleLoad}>Load Data</Button>
+          <Button onClick={handleLoad} disabled={isUploading || !file}>
+            {isUploading ? "Uploading..." : "Load Data"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

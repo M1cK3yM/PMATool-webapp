@@ -17,6 +17,9 @@ import {
   updateTemplate,
   deleteTemplate,
 } from "@/lib/template-service";
+// Added imports for Config Service and Table Service
+import { getConfig, createConfig } from "@/lib/config-service";
+import { getRecords } from "@/lib/table-service"; // Import getRecords
 import {
   Dialog,
   DialogContent,
@@ -104,8 +107,14 @@ export default function Home() {
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null);
 
   // States for database connection strings, displayed in the status bar/settings.
-  const [finDbConnection, setFinDbConnection] = useState("ross_fin.udl");
-  const [manDbConnection, setManDbConnection] = useState("ross_man.udl");
+  const [finDbConnection, setFinDbConnection] = useState("");
+  const [manDbConnection, setManDbConnection] = useState("");
+  // Store full config to preserve destination settings when saving
+  const [fullConfig, setFullConfig] = useState<any>(null);
+
+  // State for fetched records
+  const [templateRecords, setTemplateRecords] = useState<any[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
 
 
   // --- Data Loading ---
@@ -122,30 +131,102 @@ export default function Home() {
   };
 
   /**
-   * Runs once on component mount to fetch the initial template list.
+   * Fetches the current configuration (DB connections) from the backend.
+   */
+  const loadConfig = async () => {
+    try {
+      const username = "Administrator"; 
+      const config = await getConfig(username);
+      if (config) {
+        setFinDbConnection(config.src_fin_con_str || "");
+        setManDbConnection(config.src_man_con_str || "");
+        setFullConfig(config);
+      }
+    } catch (error) {
+      console.error("Failed to load config", error);
+    }
+  };
+
+  /**
+   * Runs once on component mount to fetch the initial template list and config.
    * Automatically selects the first template if the list is not empty.
    */
   useEffect(() => {
+    loadConfig();
     loadTemplateList().then((data) => {
       if (data.length > 0) {
-        handleTableSelect(data[0].ID);
+        // Pass the database name explicitly from the loaded list
+        handleTableSelect(data[0].ID, data[0].databaseName);
       }
     });
   }, []);
 
   // --- Event Handlers ---
+  
+  /**
+   * Handles saving the settings from the dialog to the backend.
+   */
+  const handleSaveSettings = async (finDb: string, manDb: string) => {
+    try {
+      const username = "Administrator";
+      // Use existing destination strings if available, otherwise empty
+      const desFin = fullConfig?.des_fin_con_str || "";
+      const desMan = fullConfig?.des_man_con_str || "";
+
+      await createConfig({
+        username,
+        src_fin_con_str: finDb,
+        src_man_con_str: manDb,
+        des_fin_con_str: desFin,
+        des_man_con_str: desMan
+      });
+      
+      // Update local state
+      setFinDbConnection(finDb);
+      setManDbConnection(manDb);
+      // Refresh full config to ensure sync
+      loadConfig();
+
+      console.log('Settings saved:', { finDb, manDb });
+      
+      // toast.success("Configuration saved to server."); // SettingsDialog already toasts
+    } catch (error: any) {
+      toast.error("Failed to save settings to server.");
+    }
+  };
+
   /**
    * Handles user selection of a template from the list.
    * Fetches the full template details (fields, forms).
+   * * UPDATED: Accepts dbName to route the request to the correct database (FIN or MAN).
    */
-  const handleTableSelect = async (templateId: number) => {
-    if (selectedTemplate?.ID === templateId) return;
+  const handleTableSelect = async (templateId: number, dbName?: string) => {
+    // If we are already viewing this template, do nothing.
+    if (selectedTemplate?.ID === templateId && (!dbName || selectedTemplate?.databaseName === dbName)) return;
+
+    // Resolve the database name.
+    // If dbName is passed (e.g. from a direct call), use it.
+    // Otherwise, try to find it in the loaded templateList.
+    let databaseName = dbName;
+    if (!databaseName) {
+        const tmplFromList = templateList.find(t => t.ID === templateId);
+        databaseName = tmplFromList?.databaseName;
+    }
+
+    if (!databaseName) {
+      toast.error("Could not determine database context for this template.");
+      return;
+    }
 
     setIsLoadingDetails(true);
     setSelectedField(null); // Clear previous field selection.
     setFieldFilter("all"); // Reset field filter.
+    setTemplateRecords([]); // Clear records when switching templates
 
-    const fullTemplate = await getTemplate(templateId); // API call for full template details.
+    // @ts-ignore - The service signature needs to be updated to accept dbName
+    // Make sure your getTemplate in template-service.ts is updated to accept the second argument!
+    const fullTemplate = await getTemplate(templateId, databaseName); 
+    
     setSelectedTemplate(fullTemplate);
     
     // Set the first form as selected, or null if none exist.
@@ -172,7 +253,8 @@ export default function Home() {
 
     await updateTemplate(renumberedTemplate); // API call to save all nested data.
     // Refresh the local state to ensure data is clean after save.
-    handleTableSelect(renumberedTemplate.ID);
+    // We can reuse the existing DB name from the selected template.
+    handleTableSelect(renumberedTemplate.ID, renumberedTemplate.databaseName);
   };
 
   /**
@@ -222,7 +304,8 @@ export default function Home() {
       const data = await loadTemplateList();
       const newTemplate = data.find(t => t.ID === result.id);
       if (newTemplate) {
-        handleTableSelect(newTemplate.ID);
+        // Pass the new DB name
+        handleTableSelect(newTemplate.ID, newTemplate.databaseName);
       }
     }
   };
@@ -240,11 +323,13 @@ export default function Home() {
 
   /**
    * Executes the template deletion after user confirmation.
+   * UPDATED: Passes the database name to the delete service.
    */
   const handleConfirmDelete = async () => {
     if (!templateToDelete) return;
     
-    await deleteTemplate(templateToDelete.ID); // API call to delete template.
+    // @ts-ignore - The service signature needs to be updated to accept dbName
+    await deleteTemplate(templateToDelete.ID, templateToDelete.databaseName); 
     
     // Reset state and refresh UI.
     setIsDeleteAlertOpen(false);
@@ -253,7 +338,7 @@ export default function Home() {
     
     loadTemplateList().then((data) => {
       if (data.length > 0) {
-        handleTableSelect(data[0].ID);
+        handleTableSelect(data[0].ID, data[0].databaseName);
       }
     });
   };
@@ -502,12 +587,38 @@ export default function Home() {
   };
 
   /**
-   * Placeholder for the C# "Info" button logic.
-   * This would typically fetch sample records and table metadata.
+   * Fetches sample records from the database and updates the records tab.
+   * This implements the 'Info' button functionality.
    */
-  const handleInfo = () => {
-    if (!selectedTemplate) return;
-    toast.info("Fetching template records and table info... (Not Implemented)");
+  const handleInfo = async () => {
+    if (!selectedTemplate) {
+      toast.error("No template selected.");
+      return;
+    }
+
+    setRecordsLoading(true);
+    try {
+      const result = await getRecords({
+        username: "Administrator",
+        connType: "SRC", // Default to source
+        dbType: selectedTemplate.databaseName,
+        tableName: selectedTemplate.tableName
+      });
+
+      // If the backend returns a number:
+      if (typeof result === 'number') {
+         toast.success(`Found ${result} records in the database.`);
+      } else {
+         // If it returned data (future proofing)
+         // setTemplateRecords(result);
+      }
+      
+    } catch (error: any) {
+      console.error("Info fetch failed", error);
+      toast.error("Failed to fetch info: " + (error.message || "Unknown error"));
+    } finally {
+      setRecordsLoading(false);
+    }
   }
 
   /**
@@ -521,11 +632,59 @@ export default function Home() {
   };
 
   /**
-   * Placeholder for the C# "Export" (to Excel) functionality.
+   * Export functionality implementation.
+   * Creates a CSV file with template details and field definitions.
    */
   const handleExport = () => {
-    if (!selectedTemplate) return;
-    toast.info("Exporting template definition to Excel... (Not Implemented)");
+    if (!selectedTemplate) {
+      toast.error("No template selected to export.");
+      return;
+    }
+
+    try {
+      const csvRows = [];
+      // Header for Template info
+      csvRows.push(["Template Name", selectedTemplate.tableName].join(","));
+      csvRows.push(["Database", selectedTemplate.databaseName].join(","));
+      csvRows.push(["Module", selectedTemplate.moduleName].join(","));
+      csvRows.push([]); // Empty line
+
+      // Header for Fields
+      csvRows.push(["Field Name", "Prompt", "Value", "Type", "Key", "Form ID", "Order", "Data Type", "Length"].join(","));
+
+      // Data Rows
+      selectedTemplate.fields.forEach(field => {
+        const row = [
+          `"${field.fieldName}"`, // Quote to handle potential commas
+          `"${field.fieldPrompt}"`,
+          `"${field.fieldValue || ""}"`,
+          field.fieldType,
+          field.isKey ? "Yes" : "No",
+          field.formID,
+          field.fieldOrder,
+          field.dataType,
+          field.fieldLength
+        ];
+        csvRows.push(row.join(","));
+      });
+
+      // Create Blob and download link
+      const csvString = csvRows.join("\n");
+      const blob = new Blob([csvString], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.setAttribute('hidden', '');
+      a.setAttribute('href', url);
+      a.setAttribute('download', `${selectedTemplate.tableName}_template.csv`);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      toast.success("Template exported successfully.");
+    } catch (err) {
+      console.error("Export failed", err);
+      toast.error("Failed to export template.");
+    }
   }
   
   /**
@@ -551,11 +710,13 @@ export default function Home() {
   }
 
   return (
-    // Main container for the Data Loader application.
-    <main className="flex flex-col flex-1 h-full min-h-0">
+    // Changed: main now uses overflow-y-auto to allow whole-page scrolling
+    <main className="flex flex-col flex-1 h-full min-h-0 overflow-y-auto">
       
+      <div className="flex-none p-1 space-y-4">
+
       {/* --- Toolbar: Top-level actions for file/template management --- */}
-      <div className="flex flex-wrap items-center p-2 border-b bg-muted/50 gap-1">
+      <div className="flex flex-wrap items-center p-2 border-b bg-muted/50 gap-1 shrink-0 sticky top-0 z-10 backdrop-blur-md">
         
         {/* File Actions: Load, Save, Save As, New */}
         <Button onClick={loadTemplateList} variant="ghost" size="sm" className="gap-2">
@@ -628,7 +789,7 @@ export default function Home() {
           <Info className="size-4" /> Info
         </Button>
         <Button onClick={() => setIsUploaderOpen(true)} variant="ghost" size="sm" className="gap-2" disabled={!selectedTemplate}>
-          <Upload className="size-4" /> UPLOAD
+          <Upload className="size-4" /> Upload
         </Button>
         <Button onClick={handleOpenDoc} variant="ghost" size="sm" className="gap-2" disabled={!selectedTemplate}>
           <Book className="size-4" /> Open Doc
@@ -669,33 +830,37 @@ export default function Home() {
         </Button>
       </div>
 
-      {/* --- Main Content Area: Divided into vertical columns (left/right) --- */}
-      <div className="flex flex-col flex-1 min-h-0">
+      {/* --- Main Content Area --- */}
+      
         
-        {/* --- Top Row: Template List, Forms, and Records Tabs --- */}
-        <div className="grid grid-cols-1 md:grid-cols-2 w-full flex-basis-1/2 min-h-0">
+        {/* --- Top Row: Fixed height of 500px --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full h-[500px] shrink-0">
 
           {/* Left Column: Template List & Help */}
-          <div className="w-full p-4 flex flex-col gap-4 border-r min-h-0">
-              <Card className="flex flex-col flex-1">
+          <div className="w-full flex flex-col gap-4 h-full min-h-0 overflow-hidden">
+              <Card className="flex flex-col flex-1 min-h-0">
                 <CardHeader>
                   <CardTitle>Template Tables</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 min-h-0">
+                <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
                   <TemplateList
                     tables={templateList}
                     selectedTemplateId={selectedTemplate?.ID || null}
-                    onSelect={handleTableSelect}
+                    onSelect={(id) => {
+                       // Fix: Lookup the DB name because TemplateList likely only emits ID
+                       const t = templateList.find(x => x.ID === id); 
+                       handleTableSelect(id, t?.databaseName);
+                    }}
                     onDelete={handleDeleteTemplateClick}
                   />
                 </CardContent>
               </Card>
 
               {/* Table Help Textarea (Corresponds to old bottom-left textbox) */}
-              <div>
+              <div className="shrink-0">
                 <h4 className="text-sm font-medium mb-1">Table Help</h4>
                 <Textarea
-                  className="h-24 mt-2"
+                  className="h-24 mt-2 resize-none"
                   value={selectedTemplate?.tableHelp || ""}
                   onChange={(e) => selectedTemplate && setSelectedTemplate({
                     ...selectedTemplate,
@@ -707,15 +872,15 @@ export default function Home() {
           </div>
 
           {/* Right Column: Forms and Records Tabs */}
-          <div className="w-full p-4 flex flex-col gap-4 min-h-0">
-            <Tabs defaultValue="forms" className="flex flex-col flex-1">
-              <TabsList>
+          <div className="w-full flex flex-col gap-4 h-full min-h-0 overflow-hidden">
+            <Tabs defaultValue="forms" className="flex flex-col flex-1 min-h-0">
+              <TabsList className="shrink-0 w-full justify-start">
                 <TabsTrigger value="forms">Data Entry Forms</TabsTrigger>
                 <TabsTrigger value="records" disabled={!selectedTemplate}>
                   Template Records
                 </TabsTrigger>
               </TabsList>
-              <TabsContent value="forms" className="flex-1">
+              <TabsContent value="forms" className="flex-1 min-h-0 data-[state=active]:flex flex-col">
                 <FormList
                   forms={selectedTemplate?.forms || []}
                   onAddForm={handleAddForm}
@@ -725,26 +890,38 @@ export default function Home() {
                   selectedForm={selectedForm}
                 />
               </TabsContent>
-              <TabsContent value="records" className="flex-1">
+              <TabsContent value="records" className="flex-1 min-h-0 data-[state=active]:flex flex-col">
                 <TemplateRecordsTab 
                   template={selectedTemplate}
-                  onCopyRecord={() => toast.info("Copying record to fields... (Not Implemented)")}
+                  records={templateRecords} // Pass data
+                  loading={recordsLoading}  // Pass loading state
+                  onCopyRecord={(record) => {
+                    // Logic to populate fields from selected record
+                    if (!selectedTemplate) return;
+                    const newFields = selectedTemplate.fields.map(f => {
+                      if (record[f.fieldName] !== undefined) {
+                        return { ...f, fieldValue: String(record[f.fieldName]) };
+                      }
+                      return f;
+                    });
+                    setSelectedTemplate({ ...selectedTemplate, fields: newFields });
+                    toast.success("Copied record values to fields.");
+                  }}
                 />
               </TabsContent>
             </Tabs>
           </div>
         </div>
 
-        {/* --- Bottom Row: Fields List and Field Details --- */}
-        <div className="w-full p-4 flex flex-col border-t flex-1 min-h-0">
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1 min-h-0">
+        {/* --- Bottom Row: Fixed height of 600px --- */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 w-full h-[600px] shrink-0">
             
             {/* Field List (The main grid for field definitions) */}
-            <Card className="h-full flex flex-col flex-1">
+            <Card className="h-full flex flex-col flex-1 min-h-0">
               <CardHeader>
                 <CardTitle>Fields for {selectedTemplate?.tableName || "..."}</CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 min-h-0">
+              <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
                 {isLoadingDetails ? (
                   <div className="text-center p-8">Loading fields...</div>
                 ) : (
@@ -760,18 +937,19 @@ export default function Home() {
             </Card>
 
             {/* Field Info Panel (Detail view for the selected field) */}
-            <FieldInfoPanel 
-              field={selectedField} 
-              forms={selectedTemplate?.forms || []} 
-              onUpdateField={handleUpdateField}
-            />
-          </div>
+            <div className="flex-1 min-h-0 h-full overflow-y-auto">
+              <FieldInfoPanel 
+                field={selectedField} 
+                forms={selectedTemplate?.forms || []} 
+                onUpdateField={handleUpdateField}
+              />
+            </div>
         </div>
 
       </div>
       
       {/* --- Status Bar: Displays connection status/paths --- */}
-      <div className="flex items-center p-2 border-t bg-muted/50 text-sm text-muted-foreground">
+      <div className="flex items-center p-2 border-t bg-muted/50 text-sm text-muted-foreground shrink-0 mt-auto">
         <div className="px-2 border-r">
           FIN DB: <span className="font-medium text-foreground">{finDbConnection}</span>
         </div>
@@ -798,10 +976,7 @@ export default function Home() {
         onOpenChange={setIsSettingsOpen}
         finDb={finDbConnection}
         manDb={manDbConnection}
-        onSave={(fin, man) => {
-          setFinDbConnection(fin);
-          setManDbConnection(man);
-        }}
+        onSave={handleSaveSettings}
       />
       
       <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>

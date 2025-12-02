@@ -1,4 +1,3 @@
-// New Code File
 "use client";
 
 import { useState } from "react";
@@ -76,61 +75,67 @@ export default function FormList({
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader>
+      <CardHeader className="shrink-0">
         <CardTitle>Data Entry Forms</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      
+      {/* Changed: Added flex-1, overflow-y-auto, and min-h-0.
+          This allows the content (Table + Inputs) to scroll internally if the screen height is small,
+          preventing it from pushing the footer off-screen. */}
+      <CardContent className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4">
         {/* Table list of defined forms */}
-        <ScrollArea className="h-48 overflow-y-auto border rounded-md">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Form ID</TableHead>
-                <TableHead>Form Name</TableHead>
-                <TableHead>Seq</TableHead>
-                <TableHead className="w-12"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {forms.length === 0 ? (
+        <div className="border rounded-md shrink-0">
+            <ScrollArea className="h-48">
+            <Table>
+                <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center">
-                    No forms defined.
-                  </TableCell>
+                    <TableHead>Form ID</TableHead>
+                    <TableHead>Form Name</TableHead>
+                    <TableHead>Seq</TableHead>
+                    <TableHead className="w-12"></TableHead>
                 </TableRow>
-              ) : (
-                forms.map((form) => (
-                  <TableRow 
-                    key={form.ID || form.formID}
-                    onClick={() => onSelectForm(form)}
-                    // Highlight the selected row
-                    className={cn("cursor-pointer", 
-                      selectedForm?.formID === form.formID && 'bg-accent'
-                    )}
-                  >
-                    <TableCell>{form.formID}</TableCell>
-                    <TableCell>{form.formName}</TableCell>
-                    <TableCell>{form.formSeq}</TableCell>
-                    <TableCell>
-                      {/* Button to delete the form */}
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-destructive"
-                        onClick={() => onDeleteForm(form)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                </TableHeader>
+                <TableBody>
+                {forms.length === 0 ? (
+                    <TableRow>
+                    <TableCell colSpan={4} className="text-center">
+                        No forms defined.
                     </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </ScrollArea>
+                    </TableRow>
+                ) : (
+                    forms.map((form) => (
+                    <TableRow 
+                        key={form.ID || form.formID}
+                        onClick={() => onSelectForm(form)}
+                        // Highlight the selected row
+                        className={cn("cursor-pointer", 
+                        selectedForm?.formID === form.formID && 'bg-accent'
+                        )}
+                    >
+                        <TableCell>{form.formID}</TableCell>
+                        <TableCell>{form.formName}</TableCell>
+                        <TableCell>{form.formSeq}</TableCell>
+                        <TableCell>
+                        {/* Button to delete the form */}
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive"
+                            onClick={() => onDeleteForm(form)}
+                        >
+                            <Trash2 className="size-4" />
+                        </Button>
+                        </TableCell>
+                    </TableRow>
+                    ))
+                )}
+                </TableBody>
+            </Table>
+            </ScrollArea>
+        </div>
         
         {/* Form Details: Help Text (Corresponds to old txtTableFormHelp) */}
-        <div className="space-y-2">
+        <div className="space-y-2 shrink-0">
           <Label htmlFor="formHelp">Form Help</Label>
           <Textarea 
             id="formHelp" 
@@ -143,7 +148,7 @@ export default function FormList({
         </div>
         
         {/* Form Details: Screen File (Corresponds to old txtFormScreenFile) */}
-        <div className="space-y-2">
+        <div className="space-y-2 shrink-0">
           <Label htmlFor="formScreenFile">Form Screen File</Label>
           <div className="flex gap-2">
             <Input 
@@ -161,8 +166,9 @@ export default function FormList({
         </div>
       </CardContent>
       
-      {/* Footer: Inputs for adding a new form */}
-      <CardFooter>
+      {/* Footer: Inputs for adding a new form. 
+          Changed: Added shrink-0 and border-t to keep it distinct and pinned at bottom. */}
+      <CardFooter className="shrink-0 border-t pt-4">
         <div className="flex w-full items-end gap-2">
           <div className="flex-1">
             <Label htmlFor="newFormId">Form ID</Label>

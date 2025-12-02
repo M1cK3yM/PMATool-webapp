@@ -239,9 +239,10 @@ export async function listTemplates(): Promise<Template[]> {
  * @param id The ID of the template to fetch.
  * @returns A promise that resolves to the full Template object or null.
  */
-export async function getTemplate(id: number): Promise<Template | null> {
+export async function getTemplate(id: number, dbName: string): Promise<Template | null> {
   try {
-    const { data } = await apiClient.get<TemplateResponse>(`/templates/${id}`);
+    // Pass dbName as query parameter
+    const { data } = await apiClient.get<TemplateResponse>(`/templates/${id}?db=${dbName}`);
     return mapTemplateFromAPI(data);
   } catch (error: any) {
     toast.error(
@@ -302,9 +303,9 @@ export async function updateTemplate(template: Template) {
  * @param id The ID of the template to delete.
  * @returns A promise that resolves upon successful deletion.
  */
-export async function deleteTemplate(id: number) {
+export async function deleteTemplate(id: number, dbName: string) {
   try {
-    await apiClient.delete(`/templates/${id}`);
+    await apiClient.delete(`/templates/${id}?db=${dbName}`);
     toast.success(`Template deleted successfully.`);
   } catch (error: any) {
     toast.error("Failed to delete template: " + (error.message || "Unknown error"));

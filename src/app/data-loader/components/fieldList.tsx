@@ -43,8 +43,8 @@ export default function FieldList({
   };
   
   return (
-    // Scrollable area to contain the field table.
-    <ScrollArea className="h-[50vh] border rounded-md">
+    // Changed: h-full allows the scroll area to fit exactly into the bottom panel defined in page.tsx
+    <ScrollArea className="h-full border rounded-md">
       <Table>
         <TableHeader>
             <TableRow>

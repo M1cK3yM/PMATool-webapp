@@ -1,6 +1,6 @@
 import axios from "axios"
 
-const baseURL = process.env.NEXT_PUBLIC_API_DOMAIN || "http://localhost:4444"
+const baseURL = process.env.NEXT_PUBLIC_API_DOMAIN || "http://localhost:8080"
 
 export const apiClient = axios.create({
   baseURL,
