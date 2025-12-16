@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ExecutePlanResponse, LaborIn } from "@/lib/mrp-service";
+import { ExecutePlanResponse, LaborIn, flattenTree } from "@/lib/mrp-service";
 import { useMemo } from "react";
 
 interface LaborSummaryDialogProps {
@@ -25,9 +25,10 @@ interface LaborSummaryRow {
 export default function LaborSummaryDialog({ open, onOpenChange, data }: LaborSummaryDialogProps) {
 
   const summaryData = useMemo(() => {
-    if (!data) return [];
+    if (!data || data.length === 0) return [];
 
-    const allLaborIns = [data.Root, ...data.Children].flatMap(node => node.labIns || []);
+    const allParts = flattenTree(data);
+    const allLaborIns = allParts.flatMap(node => node.labIns || []);
 
     const grouped = allLaborIns.reduce<Record<string, LaborSummaryRow>>((acc, labor) => {
       const key = `${labor.laborClass}-${labor.processStage}`;

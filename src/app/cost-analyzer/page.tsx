@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { FileText, Play, Users, Settings, Sigma, Save, TableConfig, TableConfigIcon } from "lucide-react"
 import MasterMRP from "./sections/MasterMRP"
-import { ExecutePlanResponse, MrpNode } from "@/lib/mrp-service";
+import { ExecutePlanResponse, PartMRP, flattenTree } from "@/lib/mrp-service";
 import ViewPlanDialog from "./components/ViewPlan-dialog"
 import ConfigureDialog from "./components/Configure-dialog"
 import ExecutePlanDialog from "./components/ExecutePlan-dialog";
@@ -26,14 +26,19 @@ export default function CostAnalyzer() {
   const [machineSummaryOpen, setMachineSummaryOpen] = useState(false);
   const [miscSummaryOpen, setMiscSummaryOpen] = useState(false);
   const [mrpData, setMrpData] = useState<ExecutePlanResponse | null>(null);
-  const [selectedMrpNode, setSelectedMrpNode] = useState<MrpNode | null>(null);
+  const [selectedMrpNode, setSelectedMrpNode] = useState<PartMRP | null>(null);
 
   const handlePlanExecuted = (data: ExecutePlanResponse) => {
     setMrpData(data);
-    setSelectedMrpNode(data.Root); // Select the root node by default
+    // Select the first tree's root node by default
+    if (data && data.length > 0) {
+      setSelectedMrpNode(data[0].Root);
+    } else {
+      setSelectedMrpNode(null);
+    }
   };
 
-  const handleMrpRowClick = (node: MrpNode) => {
+  const handleMrpRowClick = (node: PartMRP) => {
     setSelectedMrpNode(node);
   };
 
@@ -412,9 +417,34 @@ export default function CostAnalyzer() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {mrpData && selectedMrpNode && selectedMrpNode.partCode !== mrpData.Root.partCode ? (
+                          {mrpData && selectedMrpNode ? (
                             (() => {
-                              const partUsageData = mrpData.Root.materialIns?.filter(m => m.partCode === selectedMrpNode.partCode) || [];
+                              // Find the root node(s) that use this selected part
+                              const allRoots = mrpData.map(tree => tree.Root);
+                              const isRootPart = allRoots.some(root => 
+                                root.partCode === selectedMrpNode.partCode && 
+                                root.warehouse === selectedMrpNode.warehouse
+                              );
+                              
+                              if (isRootPart) {
+                                return (
+                                  <TableRow>
+                                    <TableCell colSpan={13} className="text-center text-muted-foreground py-4">
+                                      Select a child part to see its usage information.
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              }
+                              
+                              // Search through all root nodes' materialIns to find usage of selected part
+                              const partUsageData: typeof allRoots[0]['materialIns'] = [];
+                              for (const root of allRoots) {
+                                const usage = root.materialIns?.filter(m => 
+                                  m.partCode === selectedMrpNode.partCode
+                                ) || [];
+                                partUsageData.push(...usage);
+                              }
+                              
                               if (partUsageData.length > 0) {
                                 return partUsageData.map((usage, index) => (
                                   <TableRow key={index}>
@@ -429,7 +459,7 @@ export default function CostAnalyzer() {
                                     <TableCell>{usage.inputUom}</TableCell>
                                     <TableCell>{usage.totalQtyNom.toFixed(4)}</TableCell>
                                     <TableCell>{usage.inputNomUom}</TableCell>
-                                    <TableCell>{mrpData.Root.totalBatches.toFixed(2)}</TableCell>
+                                    <TableCell>{allRoots[0]?.totalBatches.toFixed(2) || '0.00'}</TableCell>
                                     <TableCell>{usage.totalQtyNom.toFixed(4)}</TableCell>
                                   </TableRow>
                                 ));

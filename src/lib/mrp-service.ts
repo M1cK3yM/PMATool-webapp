@@ -91,7 +91,7 @@ export interface MiscIn {
   unitCost: number
 }
 
-export interface MrpNode {
+export interface PartMRP {
   partCode: string
   warehouse: string
   partDesc: string
@@ -125,10 +125,15 @@ export interface MrpNode {
   miscIns: MiscIn[] | null
 }
 
-export interface ExecutePlanResponse {
-  Root: MrpNode
-  Children: MrpNode[]
+export interface Tree {
+  Root: PartMRP
+  Children: Tree[] | null
 }
+
+// Alias for backward compatibility during migration
+export type MrpNode = PartMRP
+
+export type ExecutePlanResponse = Tree[]
 
 export async function executePlan(params: ExecutePlanParams): Promise<ExecutePlanResponse> {
   const { planId, username, userUom } = params;
@@ -163,4 +168,36 @@ export async function executeSingleProduct(params: ExecuteSingleProductParams): 
   } catch (error) {
     throw new Error(`An unexpected error occurred while executing for part ${partCode}`);
   }
+}
+
+export function flattenTree(trees: Tree[]): PartMRP[] {
+  const result: PartMRP[] = [];
+  
+  function traverse(tree: Tree) {
+    result.push(tree.Root);
+    if (tree.Children) {
+      for (const child of tree.Children) {
+        traverse(child);
+      }
+    }
+  }
+  
+  for (const tree of trees) {
+    traverse(tree);
+  }
+  
+  return result;
+}
+
+export function findPartInTrees(trees: Tree[], partCode: string, warehouse?: string): PartMRP | null {
+  for (const tree of trees) {
+    if (tree.Root.partCode === partCode && (!warehouse || tree.Root.warehouse === warehouse)) {
+      return tree.Root;
+    }
+    if (tree.Children) {
+      const found = findPartInTrees(tree.Children, partCode, warehouse);
+      if (found) return found;
+    }
+  }
+  return null;
 }

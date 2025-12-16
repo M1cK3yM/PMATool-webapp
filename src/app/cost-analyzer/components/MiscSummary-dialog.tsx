@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ExecutePlanResponse, MiscIn, MrpNode } from "@/lib/mrp-service";
+import { ExecutePlanResponse, MiscIn, flattenTree } from "@/lib/mrp-service";
 import { useMemo } from "react";
 
 interface MiscSummaryDialogProps {
@@ -20,9 +20,10 @@ interface MiscSummaryRow extends MiscIn {
 export default function MiscSummaryDialog({ open, onOpenChange, data }: MiscSummaryDialogProps) {
 
   const summaryData = useMemo(() => {
-    if (!data) return [];
+    if (!data || data.length === 0) return [];
 
-    const allMiscIns = [data.Root, ...data.Children].flatMap(node =>
+    const allParts = flattenTree(data);
+    const allMiscIns = allParts.flatMap(node =>
       (node.miscIns || []).map(misc => ({ ...misc, processSpec: node.costingSpec, batches: node.totalBatches }))
     );
 

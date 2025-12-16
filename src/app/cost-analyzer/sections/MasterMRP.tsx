@@ -1,13 +1,19 @@
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { ExecutePlanResponse, MrpNode } from "@/lib/mrp-service";
+import { ExecutePlanResponse, PartMRP, flattenTree } from "@/lib/mrp-service";
+import { useMemo } from "react";
 
 interface MasterMRPProps {
   data: ExecutePlanResponse | null;
-  onRowClick: (node: MrpNode) => void;
-  selectedNode: MrpNode | null;
+  onRowClick: (node: PartMRP) => void;
+  selectedNode: PartMRP | null;
 }
 
 export default function MasterMRP({ data, onRowClick, selectedNode }: MasterMRPProps) {
+  const allParts = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    return flattenTree(data);
+  }, [data]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex-1 overflow-auto p-4">
@@ -30,51 +36,29 @@ export default function MasterMRP({ data, onRowClick, selectedNode }: MasterMRPP
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data ? (
-              <>
+            {allParts.length > 0 ? (
+              allParts.map((part) => (
                 <TableRow
-                  key={data.Root.partCode}
-                  onClick={() => onRowClick(data.Root)}
-                  data-state={selectedNode?.partCode === data.Root.partCode ? 'selected' : ''}
+                  key={`${part.partCode}-${part.warehouse}`}
+                  onClick={() => onRowClick(part)}
+                  data-state={selectedNode?.partCode === part.partCode && selectedNode?.warehouse === part.warehouse ? 'selected' : ''}
                   className="cursor-pointer"
                 >
-                  <TableCell>{data.Root.partCode}</TableCell>
-                  <TableCell>{data.Root.warehouse}</TableCell>
-                  <TableCell>{data.Root.partDesc}</TableCell>
-                  <TableCell>{data.Root.costingSpec}</TableCell>
-                  <TableCell>{data.Root.plannedQty}</TableCell>
-                  <TableCell>{data.Root.addReqQty}</TableCell>
-                  <TableCell>{data.Root.batchQty}</TableCell>
-                  <TableCell>{data.Root.batchUom}</TableCell>
-                  <TableCell>{data.Root.totalBatches}</TableCell>
-                  <TableCell>{data.Root.batchQtyNom}</TableCell>
-                  <TableCell>{data.Root.batchUomNom}</TableCell>
-                  <TableCell>{data.Root.userQty}</TableCell>
-                  <TableCell>{data.Root.stdCost}</TableCell>
+                  <TableCell>{part.partCode}</TableCell>
+                  <TableCell>{part.warehouse}</TableCell>
+                  <TableCell>{part.partDesc}</TableCell>
+                  <TableCell>{part.costingSpec}</TableCell>
+                  <TableCell>{part.plannedQty}</TableCell>
+                  <TableCell>{part.addReqQty}</TableCell>
+                  <TableCell>{part.batchQty}</TableCell>
+                  <TableCell>{part.batchUom}</TableCell>
+                  <TableCell>{part.totalBatches}</TableCell>
+                  <TableCell>{part.batchQtyNom}</TableCell>
+                  <TableCell>{part.batchUomNom}</TableCell>
+                  <TableCell>{part.userQty}</TableCell>
+                  <TableCell>{part.stdCost}</TableCell>
                 </TableRow>
-                {data.Children.map((child) => (
-                  <TableRow
-                    key={child.partCode}
-                    onClick={() => onRowClick(child)}
-                    data-state={selectedNode?.partCode === child.partCode ? 'selected' : ''}
-                    className="cursor-pointer"
-                  >
-                    <TableCell>{child.partCode}</TableCell>
-                    <TableCell>{child.warehouse}</TableCell>
-                    <TableCell>{child.partDesc}</TableCell>
-                    <TableCell>{child.costingSpec}</TableCell>
-                    <TableCell>{child.plannedQty}</TableCell>
-                    <TableCell>{child.addReqQty}</TableCell>
-                    <TableCell>{child.batchQty}</TableCell>
-                    <TableCell>{child.batchUom}</TableCell>
-                    <TableCell>{child.totalBatches}</TableCell>
-                    <TableCell>{child.batchQtyNom}</TableCell>
-                    <TableCell>{child.batchUomNom}</TableCell>
-                    <TableCell>{child.userQty}</TableCell>
-                    <TableCell>{child.stdCost}</TableCell>
-                  </TableRow>
-                ))}
-              </>
+              ))
             ) : (
               <TableRow>
                 <TableCell colSpan={13} className="text-center text-muted-foreground py-8">

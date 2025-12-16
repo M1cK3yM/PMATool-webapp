@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ExecutePlanResponse } from "@/lib/mrp-service";
+import { ExecutePlanResponse, flattenTree } from "@/lib/mrp-service";
 import { useMemo } from "react";
 
 interface MachineSummaryDialogProps {
@@ -25,9 +25,10 @@ interface MachineSummaryRow {
 export default function MachineSummaryDialog({ open, onOpenChange, data }: MachineSummaryDialogProps) {
 
   const summaryData = useMemo(() => {
-    if (!data) return [];
+    if (!data || data.length === 0) return [];
 
-    const allMachineIns = [data.Root, ...data.Children].flatMap(node => node.machineIns || []);
+    const allParts = flattenTree(data);
+    const allMachineIns = allParts.flatMap(node => node.machineIns || []);
 
     const grouped = allMachineIns.reduce<Record<string, MachineSummaryRow>>((acc, machine) => {
       const key = `${machine.machineCode}-${machine.processStage}`;

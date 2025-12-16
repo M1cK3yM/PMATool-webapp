@@ -40,6 +40,7 @@ import { getRecords, transferData, stopTransfer, type TransferError } from "@/li
 import { UpdateAlertDialog } from "./components/updateConfirmation-adialog"
 import { toast } from "sonner"
 import { CreateConnectionDialog } from "./components/createConnection-dialog"
+import { Spinner } from "@/components/ui/spinner"
 
 export type DbConfig = {
   finance: string
@@ -75,6 +76,7 @@ export default function TransferConfiguration() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
 
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogFor, setDialogFor] = useState<
@@ -237,6 +239,7 @@ export default function TransferConfiguration() {
 
   const handleUpdate = async () => {
     try {
+      setIsUpdating(true)
       const username = "Administrator"
       const rowsToTransfer = loadedRows
         .filter(r => r.includeInUpdate)
@@ -281,6 +284,7 @@ export default function TransferConfiguration() {
           if (!r.includeInUpdate) return r
 
           const tableError = result.errors?.[r.physicalName]
+          setIsUpdating(false)
           if (tableError) {
             return { ...r, updateResults: `Failed: ${tableError.error}` }
           } else {
@@ -289,6 +293,7 @@ export default function TransferConfiguration() {
         })
       )
     } catch (err: any) {
+      setIsUpdating(false)
       console.error(err)
       toast.error(err?.message || "Transfer failed")
     }
@@ -515,7 +520,9 @@ export default function TransferConfiguration() {
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" onClick={handleLoad} className="gap-2"><FolderOpen className="h-4 w-4" /> Load</Button>
         <Button variant="secondary" onClick={() => setSaveDialogOpen(true)} className="gap-2"><Save className="h-4 w-4" /> Save</Button>
-        <Button variant="default" onClick={() => setUpdateDialogOpen(true)} className="gap-2"><Play className="h-4 w-4" /> Update</Button>
+        <Button variant="default" onClick={() => setUpdateDialogOpen(true)} className="gap-2" disabled={isUpdating}>
+          {isUpdating ? <Spinner /> : <Play className="h-4 w-4" />} Update
+        </Button>
         <Button variant="outline" onClick={handleStop} className="gap-2"><Square className="h-4 w-4" /> Stop</Button>
         <div className="ml-auto flex gap-2">
           <Button variant="ghost" onClick={handleViewSource} className="gap-2"><Eye className="h-4 w-4" /> Source Records</Button>
