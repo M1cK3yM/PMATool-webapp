@@ -4,11 +4,16 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+type TableProps = React.ComponentProps<"table"> & {
+  fullHeight?: boolean
+}
+
+function Table({ className, fullHeight, ...props }: TableProps) {
   return (
     <div
       data-slot="table-container"
       className="relative w-full overflow-x-auto table-container"
+      style={{ height: fullHeight ? "auto" : "calc(100vh - 600px)" }}
     >
       <table
         data-slot="table"

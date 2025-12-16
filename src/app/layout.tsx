@@ -33,7 +33,7 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NavBar />
-          <div className="mx-auto max-w-[85vw] p-4 space-y-4">
+          <div className="mx-auto max-w-[95vw] p-4 space-y-4">
             <TopMenubar />
             {children}
           </div>

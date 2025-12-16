@@ -170,14 +170,28 @@ export async function executeSingleProduct(params: ExecuteSingleProductParams): 
   }
 }
 
-export function flattenTree(trees: Tree[]): PartMRP[] {
-  const result: PartMRP[] = [];
+export interface PartMRPWithPath extends PartMRP {
+  _uniquePath: string; // Unique path identifier for this node in the tree
+  _rootPartCode: string; // Part code of the root product this node belongs to
+}
+
+export function flattenTree(trees: Tree[]): PartMRPWithPath[] {
+  const result: PartMRPWithPath[] = [];
   
-  function traverse(tree: Tree) {
-    result.push(tree.Root);
+  function traverse(tree: Tree, path: string[] = []) {
+    const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
+    const uniquePath = currentPath.join('|');
+    const rootPartCode = path.length === 0 ? tree.Root.partCode : path[0].split('-')[0];
+    
+    result.push({
+      ...tree.Root,
+      _uniquePath: uniquePath,
+      _rootPartCode: rootPartCode,
+    });
+    
     if (tree.Children) {
       for (const child of tree.Children) {
-        traverse(child);
+        traverse(child, currentPath);
       }
     }
   }

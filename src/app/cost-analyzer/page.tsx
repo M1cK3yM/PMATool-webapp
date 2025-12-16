@@ -27,19 +27,25 @@ export default function CostAnalyzer() {
   const [miscSummaryOpen, setMiscSummaryOpen] = useState(false);
   const [mrpData, setMrpData] = useState<ExecutePlanResponse | null>(null);
   const [selectedMrpNode, setSelectedMrpNode] = useState<PartMRP | null>(null);
+  const [selectedUniquePath, setSelectedUniquePath] = useState<string | null>(null);
 
   const handlePlanExecuted = (data: ExecutePlanResponse) => {
     setMrpData(data);
     // Select the first tree's root node by default
     if (data && data.length > 0) {
-      setSelectedMrpNode(data[0].Root);
+      const rootNode = data[0].Root;
+      setSelectedMrpNode(rootNode);
+      // Create unique path for root: just the partCode-warehouse
+      setSelectedUniquePath(`${rootNode.partCode}-${rootNode.warehouse}`);
     } else {
       setSelectedMrpNode(null);
+      setSelectedUniquePath(null);
     }
   };
 
-  const handleMrpRowClick = (node: PartMRP) => {
+  const handleMrpRowClick = (node: PartMRP, uniquePath: string) => {
     setSelectedMrpNode(node);
+    setSelectedUniquePath(uniquePath);
   };
 
   const [dbHost, setDbHost] = useState("")
@@ -152,13 +158,13 @@ export default function CostAnalyzer() {
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="h-full">
           {/* Left Panel - Main Table */}
-          <ResizablePanel defaultSize={65} minSize={40}>
+          <ResizablePanel defaultSize={85} minSize={40}>
             <ResizablePanelGroup direction="vertical" className="w-50">
               <ResizablePanel defaultSize={65} minSize={40}>
-                <MasterMRP data={mrpData} onRowClick={handleMrpRowClick} selectedNode={selectedMrpNode} />
+                <MasterMRP data={mrpData} onRowClick={handleMrpRowClick} selectedNode={selectedMrpNode} selectedUniquePath={selectedUniquePath} />
               </ResizablePanel>
               <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={35} minSize={20} className="border-t">
+              <ResizablePanel defaultSize={15} minSize={20} className="border-t">
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>

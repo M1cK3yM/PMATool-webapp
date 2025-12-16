@@ -147,7 +147,6 @@ html {
 }
 
 .table-container {
-  max-height: calc(100vh - 600px);
   overflow-y: auto;
   border-radius: 0.5rem;
 }
