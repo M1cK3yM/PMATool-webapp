@@ -69,6 +69,7 @@ export default function ExecutePlanDialog({ open, onOpenChange, onPlanExecuted }
       const rootPartCode = result && result.length > 0 ? result[0].Root.partCode : 'N/A';
       setStatus(`Execution successful. Root Part Code: ${rootPartCode}`);
       setIsLoading(false);
+      onOpenChange(false);
     } catch (err: any) {
       const errorMessage = err.message || "An unknown error occurred.";
       setError(errorMessage);

@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
 import { Dialog, DialogHeader, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
 import { toast } from "sonner"
-import { getPlans, getPlanById, createPlan, type PlanRecord } from "@/lib/plan-service"
+import { Trash2 } from "lucide-react"
+import { getPlans, getPlanById, getAllPlanIDs, createPlan, deletePlan, type PlanRecord } from "@/lib/plan-service"
 
 interface ViewPlanDialogProps {
   open: boolean
@@ -22,6 +23,7 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const emptyPlan: PlanRecord = {
@@ -41,6 +43,22 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
     setPlanOptions(uniquePlanIds.map((planId) => ({ value: planId, label: planId })))
   }
 
+  // Load all plan IDs when dialog opens
+  useEffect(() => {
+    if (open) {
+      const loadPlanIDs = async () => {
+        try {
+          const planIds = await getAllPlanIDs(USERNAME)
+          setPlanOptions(planIds.map((planId) => ({ value: planId, label: planId })))
+        } catch (err: any) {
+          console.error("Failed to load plan IDs:", err)
+          // Don't show error toast here, just log it
+        }
+      }
+      loadPlanIDs()
+    }
+  }, [open])
+
   async function handleLoad() {
     setIsLoading(true)
     setError(null)
@@ -49,14 +67,42 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
       if (trimmedId) {
         const planRows = await getPlanById(USERNAME, trimmedId)
         setPlans(planRows)
-        setPlanOptions([{ value: trimmedId, label: trimmedId }])
+        // Refresh plan IDs list to ensure it's up to date
+        try {
+          const planIds = await getAllPlanIDs(USERNAME)
+          setPlanOptions(planIds.map((planId) => ({ value: planId, label: planId })))
+        } catch (err) {
+          // If refresh fails, at least keep the current plan ID in options
+          setPlanOptions([{ value: trimmedId, label: trimmedId }])
+        }
       } else {
-        const fetchedPlans = await getPlans(USERNAME)
-        setPlans(fetchedPlans)
-        syncPlanOptions(fetchedPlans)
+        await handleLoadAll()
       }
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.message || "Failed to load plans")
+      setPlans([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function handleLoadAll() {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const fetchedPlans = await getPlans(USERNAME)
+      setPlans(fetchedPlans)
+      syncPlanOptions(fetchedPlans)
+      // Also refresh from API to get all plan IDs
+      try {
+        const planIds = await getAllPlanIDs(USERNAME)
+        setPlanOptions(planIds.map((planId) => ({ value: planId, label: planId })))
+      } catch (err) {
+        // Fallback to syncing from loaded plans
+        syncPlanOptions(fetchedPlans)
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || "Failed to load all plans")
       setPlans([])
     } finally {
       setIsLoading(false)
@@ -90,6 +136,47 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
     setPlans((prev) => prev.filter((_, idx) => idx !== index))
   }
 
+  async function handleDeletePlan(index: number) {
+    const plan = plans[index]
+    
+    if (!plan.planId.trim() || !plan.warehouse.trim() || !plan.partCode.trim()) {
+      toast.error("Plan ID, Warehouse, and Part Code are required to delete a plan.")
+      return
+    }
+
+    setIsDeleting(index)
+    setError(null)
+    
+    try {
+      await deletePlan({
+        planId: plan.planId,
+        warehouse: plan.warehouse,
+        partCode: plan.partCode,
+        username: USERNAME,
+      })
+      toast.success("Plan deleted successfully")
+      // Remove the plan from the list
+      removePlanRow(index)
+      // Refresh plan IDs after deletion
+      try {
+        const planIds = await getAllPlanIDs(USERNAME)
+        setPlanOptions(planIds.map((planId) => ({ value: planId, label: planId })))
+      } catch (err) {
+        // Silently fail, plan IDs will refresh on next load
+      }
+      // If we have a plan ID filter, reload the plans to refresh the list
+      if (id.trim()) {
+        await handleLoad()
+      }
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || "Failed to delete plan"
+      setError(message)
+      toast.error(message)
+    } finally {
+      setIsDeleting(null)
+    }
+  }
+
   async function handleSavePlans() {
     const rowsToSave = plans.filter((plan) => !isRowEmpty(plan))
 
@@ -115,6 +202,13 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
     try {
       await createPlan(rowsToSave, USERNAME)
       toast.success("Plans saved successfully")
+      // Refresh plan IDs after saving
+      try {
+        const planIds = await getAllPlanIDs(USERNAME)
+        setPlanOptions(planIds.map((planId) => ({ value: planId, label: planId })))
+      } catch (err) {
+        // Silently fail, plan IDs will refresh on next load
+      }
     } catch (err: any) {
       const message = err?.response?.data?.error || err?.message || "Failed to save plans"
       setError(message)
@@ -137,9 +231,13 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
             value={id}
             setValue={setId}
             placeHolder="Select planId .."
+            emptyMessage="No plan IDs found"
           />
           <Button onClick={handleLoad} disabled={isLoading}>
-            {isLoading ? "Loading..." : id.trim() ? "Load Plan" : "Load All"}
+            {isLoading ? "Loading..." : id.trim() ? "Load Plan" : "Load Plan"}
+          </Button>
+          <Button onClick={handleLoadAll} disabled={isLoading} variant="outline">
+            {isLoading ? "Loading..." : "Load All Plans"}
           </Button>
           <Button variant="secondary" onClick={handleAddRow} disabled={isLoading || isSaving}>
             Add Row
@@ -162,12 +260,13 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
                 <TableHead className="w-[140px]">Planned Volume</TableHead>
                 <TableHead className="w-[120px]">Add Qty</TableHead>
                 <TableHead className="w-20">UOM</TableHead>
+                <TableHead className="w-[80px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {plans.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                     {isLoading ? "Loading plans..." : "No plan data available"}
                   </TableCell>
                 </TableRow>
@@ -232,6 +331,21 @@ export default function ViewPlanDialog({ open, onOpenChange }: ViewPlanDialogPro
                         onChange={(e) => handlePlanFieldChange(index, "uom", e.target.value)}
                         placeholder="UOM"
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeletePlan(index)}
+                        disabled={isDeleting === index || isLoading || isSaving || !plan.planId.trim() || !plan.warehouse.trim() || !plan.partCode.trim()}
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        {isDeleting === index ? (
+                          <span className="text-xs">...</span>
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))

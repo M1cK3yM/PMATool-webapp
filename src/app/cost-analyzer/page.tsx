@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { FileText, Play, Users, Settings, Sigma, Save, TableConfig, TableConfigIcon } from "lucide-react"
 import MasterMRP from "./sections/MasterMRP"
-import { ExecutePlanResponse, PartMRP, flattenTree } from "@/lib/mrp-service";
+import { ExecutePlanResponse, PartMRP, flattenTree, findTreeNodeForPart } from "@/lib/mrp-service";
 import ViewPlanDialog from "./components/ViewPlan-dialog"
 import ConfigureDialog from "./components/Configure-dialog"
 import ExecutePlanDialog from "./components/ExecutePlan-dialog";
@@ -28,6 +28,12 @@ export default function CostAnalyzer() {
   const [mrpData, setMrpData] = useState<ExecutePlanResponse | null>(null);
   const [selectedMrpNode, setSelectedMrpNode] = useState<PartMRP | null>(null);
   const [selectedUniquePath, setSelectedUniquePath] = useState<string | null>(null);
+
+  // Find the Tree node corresponding to the currently selected MRP node
+  const selectedTreeNode = useMemo(() => {
+    if (!mrpData || !selectedMrpNode) return null;
+    return findTreeNodeForPart(mrpData, selectedMrpNode.partCode, selectedMrpNode.warehouse);
+  }, [mrpData, selectedMrpNode]);
 
   const handlePlanExecuted = (data: ExecutePlanResponse) => {
     setMrpData(data);
@@ -211,26 +217,43 @@ export default function CostAnalyzer() {
                           </TableHeader>
                           <TableBody>
                             {selectedMrpNode?.materialIns && selectedMrpNode.materialIns.length > 0 ? (
-                              selectedMrpNode.materialIns.map((material, index) => (
-                                <TableRow key={index}>
-                                  <TableCell>{material.processStage}</TableCell>
-                                  <TableCell>{material.partCode}</TableCell>
-                                  <TableCell>{material.warehouse}</TableCell>
-                                  <TableCell>{material.detailDesc}</TableCell>
-                                  <TableCell>{material.recipeCode}</TableCell>
-                                  <TableCell>{material.setupQty}</TableCell>
-                                  <TableCell>{material.inputQty}</TableCell>
-                                  <TableCell>{material.totalQty}</TableCell>
-                                  <TableCell>{material.inputUom}</TableCell>
-                                  <TableCell>{material.inputQtyNom}</TableCell>
-                                  <TableCell>{material.inputNomUom}</TableCell>
-                                  <TableCell>{/* Std Cost - Not in materialIns */}</TableCell>
-                                  <TableCell>{/* Batches - Not in materialIns */}</TableCell>
-                                  <TableCell>{material.totalQtyNom}</TableCell>
-                                  <TableCell>{material.userQty}</TableCell>
-                                  <TableCell>{/* Column - Not in materialIns */}</TableCell>
-                                </TableRow>
-                              ))
+                              selectedMrpNode.materialIns.map((material, index) => {
+                                // Find the corresponding child node in the tree for this material input
+                                const correspondingChild = selectedTreeNode?.Children?.find(child =>
+                                  child.Root.partCode === material.partCode &&
+                                  child.Root.warehouse === material.warehouse
+                                );
+
+                                return (
+                                  <TableRow key={index}>
+                                    <TableCell>{material.processStage}</TableCell>
+                                    <TableCell>{material.partCode}</TableCell>
+                                    <TableCell>{material.warehouse}</TableCell>
+                                    <TableCell>{material.detailDesc}</TableCell>
+                                    <TableCell>{material.recipeCode}</TableCell>
+                                    <TableCell>{material.setupQty}</TableCell>
+                                    <TableCell>{material.inputQty}</TableCell>
+                                    <TableCell>{material.totalQty}</TableCell>
+                                    <TableCell>{material.inputUom}</TableCell>
+                                    <TableCell>{material.inputQtyNom}</TableCell>
+                                    <TableCell>{material.inputNomUom}</TableCell>
+                                    {/* Std Cost and Batches from the corresponding child node, if available */}
+                                    <TableCell>
+                                      {correspondingChild ? correspondingChild.Root.stdCost.toFixed(4) : ""}
+                                    </TableCell>
+                                    <TableCell>
+                                      {correspondingChild ? correspondingChild.Root.totalBatches.toFixed(2) : ""}
+                                    </TableCell>
+                                    {/* Keep Req Qty (Nom) and User Qty from material itself */}
+                                    <TableCell>{material.totalQtyNom}</TableCell>
+                                    <TableCell>{material.userQty}</TableCell>
+                                    {/* Example extra column from child node: BOM level (optional) */}
+                                    <TableCell>
+                                      {correspondingChild ? correspondingChild.Root.bomLevel : ""}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })
                             ) : (
                               <TableRow>
                                 <TableCell colSpan={16} className="text-center text-muted-foreground py-4">
@@ -427,11 +450,11 @@ export default function CostAnalyzer() {
                             (() => {
                               // Find the root node(s) that use this selected part
                               const allRoots = mrpData.map(tree => tree.Root);
-                              const isRootPart = allRoots.some(root => 
-                                root.partCode === selectedMrpNode.partCode && 
+                              const isRootPart = allRoots.some(root =>
+                                root.partCode === selectedMrpNode.partCode &&
                                 root.warehouse === selectedMrpNode.warehouse
                               );
-                              
+
                               if (isRootPart) {
                                 return (
                                   <TableRow>
@@ -441,16 +464,16 @@ export default function CostAnalyzer() {
                                   </TableRow>
                                 );
                               }
-                              
+
                               // Search through all root nodes' materialIns to find usage of selected part
                               const partUsageData: typeof allRoots[0]['materialIns'] = [];
                               for (const root of allRoots) {
-                                const usage = root.materialIns?.filter(m => 
+                                const usage = root.materialIns?.filter(m =>
                                   m.partCode === selectedMrpNode.partCode
                                 ) || [];
                                 partUsageData.push(...usage);
                               }
-                              
+
                               if (partUsageData.length > 0) {
                                 return partUsageData.map((usage, index) => (
                                   <TableRow key={index}>

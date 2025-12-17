@@ -26,6 +26,7 @@ interface ComboBoxProps {
   setValue: Dispatch<SetStateAction<string>>
   className?: string
   defaultValue?: string
+  emptyMessage?: string
 }
 
 export interface Choice {
@@ -33,7 +34,7 @@ export interface Choice {
   label: string;
 }
 
-export function Combobox({ choices, placeHolder, value, setValue, className, defaultValue = "" }: ComboBoxProps) {
+export function Combobox({ choices, placeHolder, value, setValue, className, defaultValue = "", emptyMessage = "No framework found." }: ComboBoxProps) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -55,7 +56,7 @@ export function Combobox({ choices, placeHolder, value, setValue, className, def
         <Command>
           <CommandInput placeholder={placeHolder} className="h-9" />
           <CommandList>
-            <CommandEmpty>No framework found.</CommandEmpty>
+            <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
               {choices.map((choice) => (
                 <CommandItem
