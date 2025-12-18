@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { FileText, Play, Users, Settings, Sigma, Save, TableConfig, TableConfigIcon } from "lucide-react"
 import MasterMRP from "./sections/MasterMRP"
-import { ExecutePlanResponse, PartMRP, flattenTree, findTreeNodeForPart } from "@/lib/mrp-service";
+import { ExecutePlanResponse, PartMRP, flattenTree, findTreeNodeForPart, Tree } from "@/lib/mrp-service";
+import { TreeView, type TreeDataItem } from "@/components/tree-view";
 import ViewPlanDialog from "./components/ViewPlan-dialog"
 import ConfigureDialog from "./components/Configure-dialog"
 import ExecutePlanDialog from "./components/ExecutePlan-dialog";
@@ -17,6 +18,9 @@ import LaborSummaryDialog from "./components/LaborSummary-dialog";
 import MachineSummaryDialog from "./components/MachineSummary-dialog";
 import MiscSummaryDialog from "./components/MiscSummary-dialog";
 import { getConfig } from "@/lib/config-service"
+import { Combobox, type Choice } from "@/components/ui/combobox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
 
 export default function CostAnalyzer() {
   const [viewPlanOpen, setViewPlanOpen] = useState(false);
@@ -28,12 +32,192 @@ export default function CostAnalyzer() {
   const [mrpData, setMrpData] = useState<ExecutePlanResponse | null>(null);
   const [selectedMrpNode, setSelectedMrpNode] = useState<PartMRP | null>(null);
   const [selectedUniquePath, setSelectedUniquePath] = useState<string | null>(null);
+  const [bomViewMode, setBomViewMode] = useState<"tree" | "list-expanded" | "list-levels">("tree");
+  const [selectedBomPart, setSelectedBomPart] = useState<string>("");
 
   // Find the Tree node corresponding to the currently selected MRP node
   const selectedTreeNode = useMemo(() => {
     if (!mrpData || !selectedMrpNode) return null;
     return findTreeNodeForPart(mrpData, selectedMrpNode.partCode, selectedMrpNode.warehouse);
   }, [mrpData, selectedMrpNode]);
+
+  // Convert Tree structure to TreeDataItem format for TreeView
+  const convertTreeToTreeDataItem = (tree: Tree, path: string[] = []): TreeDataItem => {
+    if (!tree || !tree.Root) {
+      return { id: '', name: '', children: undefined };
+    }
+    
+    const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
+    const uniqueId = currentPath.join('|');
+    const hasChildren = tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0;
+    
+    return {
+      id: uniqueId,
+      name: `${tree.Root.partCode} - ${tree.Root.partDesc || ''}`,
+      children: hasChildren ? tree.Children!
+        .filter(child => child && child.Root)
+        .map((child) => convertTreeToTreeDataItem(child, currentPath)) : undefined,
+      // Don't set onClick here - let onSelectChange handle selection
+    };
+  };
+
+  // Prepare tree data for TreeView - show selected node's tree or all trees
+  const treeDataItems = useMemo(() => {
+    if (!mrpData) return [];
+    
+    if (selectedTreeNode) {
+      // Show the tree starting from the selected node
+      return [convertTreeToTreeDataItem(selectedTreeNode)];
+    } else {
+      // Show all root trees
+      return mrpData.map((tree) => convertTreeToTreeDataItem(tree));
+    }
+  }, [mrpData, selectedTreeNode]);
+
+  // Get the selected item ID for TreeView (use selectedUniquePath if available)
+  const selectedTreeItemId = useMemo(() => {
+    if (!selectedMrpNode || !mrpData) return undefined;
+    // Use the selectedUniquePath if available, otherwise find it
+    if (selectedUniquePath) {
+      return selectedUniquePath;
+    }
+    // Fallback: find the path by traversing the tree
+    const findItemPath = (trees: Tree[], partCode: string, warehouse: string, path: string[] = []): string | undefined => {
+      for (const tree of trees) {
+        const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
+        if (tree.Root.partCode === partCode && tree.Root.warehouse === warehouse) {
+          return currentPath.join('|');
+        }
+        if (tree.Children) {
+          const found = findItemPath(tree.Children, partCode, warehouse, currentPath);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+    return findItemPath(mrpData, selectedMrpNode.partCode, selectedMrpNode.warehouse);
+  }, [selectedMrpNode, selectedUniquePath, mrpData]);
+
+  // Flatten tree to list (expanded first - parent then children)
+  const flattenTreeExpandedFirst = (tree: Tree, path: string[] = [], baseLevel: number = 0): Array<{ part: PartMRP; path: string; level: number }> => {
+    if (!tree || !tree.Root) {
+      return [];
+    }
+    
+    const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
+    const uniquePath = currentPath.join('|');
+    const level = baseLevel + path.length;
+    
+    const result: Array<{ part: PartMRP; path: string; level: number }> = [
+      { part: tree.Root, path: uniquePath, level }
+    ];
+    
+    if (tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0) {
+      for (const child of tree.Children) {
+        if (child && child.Root) {
+          result.push(...flattenTreeExpandedFirst(child, currentPath, baseLevel));
+        }
+      }
+    }
+    
+    return result;
+  };
+
+  // Flatten tree to list (same levels first - group by tree level)
+  const flattenTreeByLevels = (trees: Tree[], baseLevel: number = 0): Array<{ part: PartMRP; path: string; level: number }> => {
+    const allParts: Array<{ part: PartMRP; path: string; level: number }> = [];
+    
+    const traverse = (tree: Tree, path: string[] = []) => {
+      if (!tree || !tree.Root) {
+        return;
+      }
+      
+      const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
+      const uniquePath = currentPath.join('|');
+      const level = baseLevel + path.length;
+      
+      allParts.push({ part: tree.Root, path: uniquePath, level });
+      
+      if (tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0) {
+        for (const child of tree.Children) {
+          if (child && child.Root) {
+            traverse(child, currentPath);
+          }
+        }
+      }
+    };
+    
+    for (const tree of trees) {
+      if (tree && tree.Root) {
+        traverse(tree);
+      }
+    }
+    
+    // Sort by calculated tree level first, then by part code
+    return allParts.sort((a, b) => {
+      if (a.level !== b.level) {
+        return a.level - b.level;
+      }
+      return a.part.partCode.localeCompare(b.part.partCode);
+    });
+  };
+
+  // Get all parts for combobox
+  const bomPartChoices = useMemo((): Choice[] => {
+    if (!mrpData) return [];
+    const allParts = flattenTree(mrpData);
+    return allParts.map(part => ({
+      value: part._uniquePath,
+      label: `${part.partCode} - ${part.partDesc || ''}`
+    }));
+  }, [mrpData]);
+
+  // Get list data based on view mode (excluding selected node)
+  const bomListData = useMemo(() => {
+    if (!mrpData) return [];
+    
+    let listData: Array<{ part: PartMRP; path: string; level: number }> = [];
+    
+    if (selectedBomPart) {
+      // Find the selected part's tree
+      const pathParts = selectedBomPart.split('|');
+      const lastPart = pathParts[pathParts.length - 1];
+      const [partCode, warehouse] = lastPart.split('-');
+      const selectedTree = findTreeNodeForPart(mrpData, partCode, warehouse);
+      
+      if (selectedTree) {
+        // Calculate base level from the path length (how deep in the tree this node is)
+        const baseLevel = pathParts.length - 1;
+        if (bomViewMode === "list-expanded") {
+          listData = flattenTreeExpandedFirst(selectedTree, [], baseLevel);
+        } else {
+          listData = flattenTreeByLevels([selectedTree], baseLevel);
+        }
+      }
+    } else {
+      // Use selectedTreeNode or all trees
+      const treesToUse = selectedTreeNode ? [selectedTreeNode] : mrpData;
+      
+      // Calculate base level for selectedTreeNode
+      let baseLevel = 0;
+      if (selectedTreeNode && selectedUniquePath) {
+        baseLevel = selectedUniquePath.split('|').length - 1;
+      }
+      
+      if (bomViewMode === "list-expanded") {
+        listData = treesToUse.flatMap(tree => flattenTreeExpandedFirst(tree, [], baseLevel));
+      } else {
+        listData = flattenTreeByLevels(treesToUse, baseLevel);
+      }
+    }
+    
+    // Filter out the selected node from list view (but keep it in tree view)
+    if (selectedUniquePath) {
+      return listData.filter(item => item.path !== selectedUniquePath);
+    }
+    
+    return listData;
+  }, [mrpData, bomViewMode, selectedBomPart, selectedTreeNode, selectedUniquePath]);
 
   const handlePlanExecuted = (data: ExecutePlanResponse) => {
     setMrpData(data);
@@ -177,19 +361,21 @@ export default function CostAnalyzer() {
           <ResizableHandle withHandle />
 
           {/* Right Panel - Stacked Sections */}
-          <ResizablePanel defaultSize={35} minSize={30}>
+          <ResizablePanel defaultSize={25} minSize={30}>
             <ResizablePanelGroup direction="vertical" className="h-full">
               {/* Nom Material Usage Section */}
               <ResizablePanel defaultSize={40} minSize={25}>
                 <Card className="h-full flex flex-col rounded-none m-0 py-0">
-                  <CardContent className="flex-1 overflow-auto p-2">
-                    <Tabs defaultValue="nom-material" className="w-full h-full">
+                  <Tabs defaultValue="nom-material" className="w-full h-full flex flex-col">
+                    <div className="sticky top-0 z-20 bg-background p-2 pb-0">
                       <TabsList className="grid w-full grid-cols-4 gap-1">
                         <TabsTrigger value="nom-material" className="text-xs truncate">Material Usage</TabsTrigger>
                         <TabsTrigger value="machine" className="text-xs truncate">Machine</TabsTrigger>
                         <TabsTrigger value="labor" className="text-xs truncate">Labor Usage</TabsTrigger>
                         <TabsTrigger value="misc" className="text-xs truncate">Miscellaneous</TabsTrigger>
                       </TabsList>
+                    </div>
+                    <CardContent className="flex-1 overflow-auto p-2">
                       <TabsContent value="nom-material" className="mt-2">
                         <div className="text-xs text-muted-foreground mb-2">
                           (Source): Material Inputs: This part uses the following products as Material Input
@@ -409,15 +595,15 @@ export default function CostAnalyzer() {
                           </Table>
                         </div>
                       </TabsContent>
-                    </Tabs>
-                  </CardContent>
+                    </CardContent>
+                  </Tabs>
                 </Card>
               </ResizablePanel>
 
               <ResizableHandle withHandle />
 
               {/* Part Usage Section */}
-              <ResizablePanel defaultSize={30} minSize={20}>
+              <ResizablePanel defaultSize={20} minSize={20}>
                 <Card className="h-full py-2 gap-0 flex flex-col rounded-none">
                   <CardHeader >
                     <CardTitle className="text-sm">Part Usage</CardTitle>
@@ -519,21 +705,173 @@ export default function CostAnalyzer() {
               <ResizableHandle withHandle />
 
               {/* Multi-level Bill of Materials Section */}
-              <ResizablePanel defaultSize={30} minSize={20}>
-                <Card className="h-full flex flex-col rounded-none">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Multi-level Bill of Materials</CardTitle>
+              <ResizablePanel defaultSize={50} minSize={30}>
+                <Card className="h-full flex flex-col rounded-none gap-0">
+                  <CardHeader className="pb-2 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Multi-level Bill of Materials</CardTitle>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs whitespace-nowrap">Select Part:</Label>
+                        <Combobox
+                          choices={bomPartChoices}
+                          value={selectedBomPart}
+                          setValue={setSelectedBomPart}
+                          placeHolder="Select part..."
+                          className="flex-1 h-8 text-xs"
+                          emptyMessage="No parts found"
+                        />
+                      </div>
+                      <RadioGroup value={bomViewMode} onValueChange={(value) => setBomViewMode(value as "tree" | "list-expanded" | "list-levels")} className="flex gap-4">
+                        <div className="flex items-center space-x-1">
+                          <RadioGroupItem value="tree" id="bom-tree" />
+                          <Label htmlFor="bom-tree" className="text-xs cursor-pointer">Tree</Label>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <RadioGroupItem value="list-expanded" id="bom-expanded" />
+                          <Label htmlFor="bom-expanded" className="text-xs cursor-pointer">List (Expanded)</Label>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <RadioGroupItem value="list-levels" id="bom-levels" />
+                          <Label htmlFor="bom-levels" className="text-xs cursor-pointer">List (By Level)</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-auto p-2">
-                    <div className="flex gap-2 mb-2">
-                      <Input placeholder="Part code" className="flex-1" />
-                      <Button size="sm">Show Part</Button>
-                    </div>
-                    <div className="border rounded-md p-4 h-full min-h-[200px] bg-muted/20">
-                      <p className="text-sm text-muted-foreground text-center py-8">
-                        Multi-level BOM structure will be displayed here
-                      </p>
-                    </div>
+                  <CardContent className="flex-1 overflow-hidden px-2 flex flex-col">
+                    {bomViewMode === "tree" ? (
+                      treeDataItems.length > 0 ? (
+                        <div className="flex-1 overflow-auto border rounded-md bg-background">
+                          <TreeView
+                            data={treeDataItems}
+                            initialSelectedItemId={selectedTreeItemId}
+                            onSelectChange={(item) => {
+                              if (item && mrpData) {
+                                // The item.id is the unique path (e.g., "PART1-WH1|PART2-WH2")
+                                // Extract the last part to get partCode and warehouse
+                                const pathParts = item.id.split('|');
+                                const lastPart = pathParts[pathParts.length - 1];
+                                const [partCode, warehouse] = lastPart.split('-');
+                                
+                                const foundNode = findTreeNodeForPart(mrpData, partCode, warehouse);
+                                if (foundNode) {
+                                  handleMrpRowClick(foundNode.Root, item.id);
+                                }
+                              }
+                            }}
+                            className="h-full"
+                          />
+                        </div>
+                      ) : (
+                        <div className="border rounded-md p-4 h-full min-h-[200px] bg-muted/20">
+                          <p className="text-sm text-muted-foreground text-center py-8">
+                            {mrpData ? 'Select a part to view its BOM structure' : 'No data available'}
+                          </p>
+                        </div>
+                      )
+                    ) : bomListData.length > 0 ? (
+                      <div className="border rounded-md bg-background">
+                               <Table fullHeight={true}>
+                               <TableHeader className="sticky-header">
+                            <TableRow>
+                              <TableHead className="w-[60px]">Level</TableHead>
+                              <TableHead>Part Code</TableHead>
+                              <TableHead>WH</TableHead>
+                              <TableHead>Part Desc</TableHead>
+                              <TableHead>Stage</TableHead>
+                              <TableHead>Recipe</TableHead>
+                              <TableHead>Setup Qty</TableHead>
+                              <TableHead>Input Qty</TableHead>
+                              <TableHead>In Qty/Batch</TableHead>
+                              <TableHead>UOM</TableHead>
+                              <TableHead>Nom. In Qty.</TableHead>
+                              <TableHead>Nom U...</TableHead>
+                              <TableHead>Std Cost</TableHead>
+                              <TableHead>Batches</TableHead>
+                              <TableHead>Req Qty (Nom)</TableHead>
+                              <TableHead>User Qty</TableHead>
+                              <TableHead>Column</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {bomListData.map((item, index) => {
+                              // Find material input data for this part from parent nodes
+                              const findMaterialData = (): { material: any; parentNode: PartMRP | null } | null => {
+                                if (!mrpData) return null;
+                                
+                                // Search through all trees to find where this part is used as material
+                                const searchTree = (tree: Tree): { material: any; parentNode: PartMRP | null } | null => {
+                                  if (tree.Root.materialIns) {
+                                    const material = tree.Root.materialIns.find(m => 
+                                      m.partCode === item.part.partCode && m.warehouse === item.part.warehouse
+                                    );
+                                    if (material) {
+                                      return { material, parentNode: tree.Root };
+                                    }
+                                  }
+                                  
+                                  if (tree.Children) {
+                                    for (const child of tree.Children) {
+                                      const result = searchTree(child);
+                                      if (result) return result;
+                                    }
+                                  }
+                                  
+                                  return null;
+                                };
+                                
+                                for (const tree of mrpData) {
+                                  const result = searchTree(tree);
+                                  if (result) return result;
+                                }
+                                
+                                return null;
+                              };
+                              
+                              const materialData = findMaterialData();
+                              
+                              return (
+                                <TableRow
+                                  key={`${item.path}-${index}`}
+                                  onClick={() => {
+                                    const foundNode = findTreeNodeForPart(mrpData!, item.part.partCode, item.part.warehouse);
+                                    if (foundNode) {
+                                      handleMrpRowClick(item.part, item.path);
+                                    }
+                                  }}
+                                  className={`cursor-pointer ${selectedUniquePath === item.path ? 'bg-muted' : ''}`}
+                                >
+                                  <TableCell className="pl-4">{item.level + 1}</TableCell>
+                                  <TableCell style={{ paddingLeft: `${item.level * 16 + 8}px` }}>{item.part.partCode}</TableCell>
+                                  <TableCell>{item.part.warehouse}</TableCell>
+                                  <TableCell>{item.part.partDesc}</TableCell>
+                                  <TableCell>{materialData?.material?.processStage || item.part.finalStage || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.recipeCode || item.part.finalStageRecipe || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.setupQty?.toFixed(2) || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.inputQty?.toFixed(2) || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.totalQty?.toFixed(4) || item.part.batchQty?.toFixed(4) || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.inputUom || item.part.batchUom || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.inputQtyNom?.toFixed(4) || item.part.batchQtyNom?.toFixed(4) || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.inputNomUom || item.part.batchUomNom || ""}</TableCell>
+                                  <TableCell>{item.part.stdCost.toFixed(4)}</TableCell>
+                                  <TableCell>{item.part.totalBatches.toFixed(2)}</TableCell>
+                                  <TableCell>{materialData?.material?.totalQtyNom?.toFixed(4) || item.part.batchQtyNom?.toFixed(4) || ""}</TableCell>
+                                  <TableCell>{materialData?.material?.userQty || item.part.userQty || ""}</TableCell>
+                                  <TableCell>{item.part.bomLevel || ""}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <div className="border rounded-md p-4 h-full min-h-[200px] bg-muted/20">
+                        <p className="text-sm text-muted-foreground text-center py-8">
+                          {mrpData ? 'Select a part to view its BOM structure' : 'No data available'}
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </ResizablePanel>

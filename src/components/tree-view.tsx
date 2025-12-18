@@ -127,7 +127,7 @@ const TreeView = React.forwardRef<HTMLDivElement, TreeProps>(
         }, [data, expandAll, initialSelectedItemId])
 
         return (
-            <div className={cn('overflow-hidden relative p-2', className)}>
+            <div className={cn('relative p-2', className)}>
                 <TreeItem
                     data={data}
                     ref={ref}
@@ -305,9 +305,24 @@ const TreeNode = ({
                         isDragOver && dragOverVariants(),
                         item.className
                     )}
-                    onClick={() => {
-                        handleSelectChange(item)
-                        item.onClick?.()
+                    onClick={(e) => {
+                        // Only select if clicking on the text/content area, not the chevron
+                        const target = e.target as HTMLElement;
+                        const clickedElement = target.closest('button, span');
+                        const isChevronClick = target.closest('svg') || 
+                                             target.classList.contains('shrink-0') ||
+                                             (clickedElement && clickedElement.querySelector('svg') && 
+                                              clickedElement.querySelector('svg')?.classList.contains('h-4'));
+                        
+                        // Check if click is within the first 24px (chevron area)
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const isChevronArea = clickX < 24;
+                        
+                        if (!isChevronClick && !isChevronArea) {
+                            handleSelectChange(item)
+                            item.onClick?.()
+                        }
                     }}
                     draggable={!!item.draggable}
                     onDragStart={onDragStart}

@@ -218,11 +218,15 @@ export function findPartInTrees(trees: Tree[], partCode: string, warehouse?: str
 
 // Find the Tree node (including its children) for a given partCode/warehouse
 export function findTreeNodeForPart(trees: Tree[], partCode: string, warehouse?: string): Tree | null {
+  if (!trees || !Array.isArray(trees)) return null;
+  
   for (const tree of trees) {
+    if (!tree || !tree.Root) continue;
+    
     if (tree.Root.partCode === partCode && (!warehouse || tree.Root.warehouse === warehouse)) {
       return tree;
     }
-    if (tree.Children) {
+    if (tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0) {
       const found = findTreeNodeForPart(tree.Children, partCode, warehouse);
       if (found) return found;
     }
