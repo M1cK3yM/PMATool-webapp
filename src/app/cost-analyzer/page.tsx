@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { FileText, Play, Users, Settings, Sigma, Save, TableConfig, TableConfigIcon } from "lucide-react"
@@ -46,11 +45,11 @@ export default function CostAnalyzer() {
     if (!tree || !tree.Root) {
       return { id: '', name: '', children: undefined };
     }
-    
+
     const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
     const uniqueId = currentPath.join('|');
     const hasChildren = tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0;
-    
+
     return {
       id: uniqueId,
       name: `${tree.Root.partCode} - ${tree.Root.partDesc || ''}`,
@@ -64,7 +63,7 @@ export default function CostAnalyzer() {
   // Prepare tree data for TreeView - show selected node's tree or all trees
   const treeDataItems = useMemo(() => {
     if (!mrpData) return [];
-    
+
     if (selectedTreeNode) {
       // Show the tree starting from the selected node
       return [convertTreeToTreeDataItem(selectedTreeNode)];
@@ -103,15 +102,15 @@ export default function CostAnalyzer() {
     if (!tree || !tree.Root) {
       return [];
     }
-    
+
     const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
     const uniquePath = currentPath.join('|');
     const level = baseLevel + path.length;
-    
+
     const result: Array<{ part: PartMRP; path: string; level: number }> = [
       { part: tree.Root, path: uniquePath, level }
     ];
-    
+
     if (tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0) {
       for (const child of tree.Children) {
         if (child && child.Root) {
@@ -119,25 +118,25 @@ export default function CostAnalyzer() {
         }
       }
     }
-    
+
     return result;
   };
 
   // Flatten tree to list (same levels first - group by tree level)
   const flattenTreeByLevels = (trees: Tree[], baseLevel: number = 0): Array<{ part: PartMRP; path: string; level: number }> => {
     const allParts: Array<{ part: PartMRP; path: string; level: number }> = [];
-    
+
     const traverse = (tree: Tree, path: string[] = []) => {
       if (!tree || !tree.Root) {
         return;
       }
-      
+
       const currentPath = [...path, `${tree.Root.partCode}-${tree.Root.warehouse}`];
       const uniquePath = currentPath.join('|');
       const level = baseLevel + path.length;
-      
+
       allParts.push({ part: tree.Root, path: uniquePath, level });
-      
+
       if (tree.Children && Array.isArray(tree.Children) && tree.Children.length > 0) {
         for (const child of tree.Children) {
           if (child && child.Root) {
@@ -146,13 +145,13 @@ export default function CostAnalyzer() {
         }
       }
     };
-    
+
     for (const tree of trees) {
       if (tree && tree.Root) {
         traverse(tree);
       }
     }
-    
+
     // Sort by calculated tree level first, then by part code
     return allParts.sort((a, b) => {
       if (a.level !== b.level) {
@@ -175,16 +174,16 @@ export default function CostAnalyzer() {
   // Get list data based on view mode (excluding selected node)
   const bomListData = useMemo(() => {
     if (!mrpData) return [];
-    
+
     let listData: Array<{ part: PartMRP; path: string; level: number }> = [];
-    
+
     if (selectedBomPart) {
       // Find the selected part's tree
       const pathParts = selectedBomPart.split('|');
       const lastPart = pathParts[pathParts.length - 1];
       const [partCode, warehouse] = lastPart.split('-');
       const selectedTree = findTreeNodeForPart(mrpData, partCode, warehouse);
-      
+
       if (selectedTree) {
         // Calculate base level from the path length (how deep in the tree this node is)
         const baseLevel = pathParts.length - 1;
@@ -197,25 +196,25 @@ export default function CostAnalyzer() {
     } else {
       // Use selectedTreeNode or all trees
       const treesToUse = selectedTreeNode ? [selectedTreeNode] : mrpData;
-      
+
       // Calculate base level for selectedTreeNode
       let baseLevel = 0;
       if (selectedTreeNode && selectedUniquePath) {
         baseLevel = selectedUniquePath.split('|').length - 1;
       }
-      
+
       if (bomViewMode === "list-expanded") {
         listData = treesToUse.flatMap(tree => flattenTreeExpandedFirst(tree, [], baseLevel));
       } else {
         listData = flattenTreeByLevels(treesToUse, baseLevel);
       }
     }
-    
+
     // Filter out the selected node from list view (but keep it in tree view)
     if (selectedUniquePath) {
       return listData.filter(item => item.path !== selectedUniquePath);
     }
-    
+
     return listData;
   }, [mrpData, bomViewMode, selectedBomPart, selectedTreeNode, selectedUniquePath]);
 
@@ -753,7 +752,7 @@ export default function CostAnalyzer() {
                                 const pathParts = item.id.split('|');
                                 const lastPart = pathParts[pathParts.length - 1];
                                 const [partCode, warehouse] = lastPart.split('-');
-                                
+
                                 const foundNode = findTreeNodeForPart(mrpData, partCode, warehouse);
                                 if (foundNode) {
                                   handleMrpRowClick(foundNode.Root, item.id);
@@ -772,8 +771,8 @@ export default function CostAnalyzer() {
                       )
                     ) : bomListData.length > 0 ? (
                       <div className="border rounded-md bg-background">
-                               <Table fullHeight={true}>
-                               <TableHeader className="sticky-header">
+                        <Table fullHeight={true}>
+                          <TableHeader className="sticky-header">
                             <TableRow>
                               <TableHead className="w-[60px]">Level</TableHead>
                               <TableHead>Part Code</TableHead>
@@ -799,38 +798,38 @@ export default function CostAnalyzer() {
                               // Find material input data for this part from parent nodes
                               const findMaterialData = (): { material: any; parentNode: PartMRP | null } | null => {
                                 if (!mrpData) return null;
-                                
+
                                 // Search through all trees to find where this part is used as material
                                 const searchTree = (tree: Tree): { material: any; parentNode: PartMRP | null } | null => {
                                   if (tree.Root.materialIns) {
-                                    const material = tree.Root.materialIns.find(m => 
+                                    const material = tree.Root.materialIns.find(m =>
                                       m.partCode === item.part.partCode && m.warehouse === item.part.warehouse
                                     );
                                     if (material) {
                                       return { material, parentNode: tree.Root };
                                     }
                                   }
-                                  
+
                                   if (tree.Children) {
                                     for (const child of tree.Children) {
                                       const result = searchTree(child);
                                       if (result) return result;
                                     }
                                   }
-                                  
+
                                   return null;
                                 };
-                                
+
                                 for (const tree of mrpData) {
                                   const result = searchTree(tree);
                                   if (result) return result;
                                 }
-                                
+
                                 return null;
                               };
-                              
+
                               const materialData = findMaterialData();
-                              
+
                               return (
                                 <TableRow
                                   key={`${item.path}-${index}`}

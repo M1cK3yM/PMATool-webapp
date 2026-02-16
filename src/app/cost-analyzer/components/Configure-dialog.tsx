@@ -48,6 +48,7 @@ export default function ConfigureDialog({ open, onOpenChange, dbConnection, setP
   const databaseTypes = [
     { value: "postgres", label: "postgres" },
     { value: "sqlserver", label: "sqlserver" },
+    { value: "azure", label: "azure" }
   ]
 
   const saveConnectionFromDialog = async () => {

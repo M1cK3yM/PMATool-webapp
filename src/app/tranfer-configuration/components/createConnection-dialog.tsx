@@ -89,6 +89,7 @@ export function CreateConnectionDialog({
   const databaseTypes = [
     { value: "postgres", label: "postgres" },
     { value: "sqlserver", label: "sqlserver" },
+    { value: "azure", label: "azure" }
   ]
 
   return (
