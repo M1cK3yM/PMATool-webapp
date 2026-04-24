@@ -39,7 +39,7 @@ export default function TopMenubar() {
         <MenubarMenu>
           <MenubarTrigger>Tools</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem onSelect={() => (window.location.href = '/')}>
+            <MenubarItem onSelect={() => (window.location.href = '/advanced-loader')}>
               <Database className="mr-2 h-4 w-4" /> Advanced Data Loader
             </MenubarItem>
             <MenubarItem onSelect={() => router.push('/tranfer-configuration')}>
